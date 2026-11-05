@@ -2,7 +2,7 @@ extends Control
 
 var arena: Node3D
 var expanded := false
-var live_feed := true
+var live_feed := false
 var compact_span := 90.0
 var zoom := 1.0
 var pan := Vector2.ZERO
@@ -22,14 +22,14 @@ const AMBER := Color("ffbd59")
 const RED := Color("ff6f79")
 const MAP_PATH := "res://assets/ui/yard-overhead-4096.png"
 const HD_SPAN := 392.3685063
+var circle_outline := PackedVector2Array()
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if FileAccess.file_exists(MAP_PATH):
-		var image := Image.load_from_file(ProjectSettings.globalize_path(MAP_PATH))
-		if image and not image.is_empty():
-			image.generate_mipmaps()
-			hd_map = ImageTexture.create_from_image(image)
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if ResourceLoader.exists(MAP_PATH): hd_map = load(MAP_PATH) as Texture2D
+	for i in range(96):
+		circle_outline.append(Vector2.from_angle(TAU * i / 96.0))
 
 func toggle_map() -> void:
 	expanded = not expanded
@@ -47,6 +47,10 @@ func _process(delta: float) -> void:
 		if feed_view: feed_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
 		return
 	if DisplayServer.get_name() == "headless": return
+	if not live_feed:
+		if feed_view: feed_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		queue_redraw()
+		return
 	if not is_instance_valid(feed_view): _build_feed()
 	var desired_size := Vector2i(768,768) if expanded else Vector2i(512,512)
 	if not OS.has_feature("mobile"): desired_size = Vector2i(1024,1024) if expanded else Vector2i(768,768)
@@ -55,7 +59,7 @@ func _process(delta: float) -> void:
 		latest_size = desired_size
 	feed_clock += delta
 	var cadence := 1.0 / (8.0 if OS.has_feature("mobile") else 12.0)
-	if live_feed and feed_clock >= cadence:
+	if feed_clock >= cadence:
 		feed_clock = fmod(feed_clock,cadence)
 		var focus := map_focus()
 		feed_camera.size = map_span()
@@ -190,15 +194,10 @@ func _draw() -> void:
 	elif hd_map: texture = hd_map
 	else: texture = arena.minimap_texture
 	if texture:
-		var tex_size := texture.get_size()
 		var full_span := HD_SPAN if texture==hd_map else maxf(arena.arena_bounds.size.x,arena.arena_bounds.size.z)*1.05
 		var uv_center := Vector2.ONE*.5 if use_live else Vector2.ONE*.5 + (focus-Vector2(arena.zone_center.x,arena.zone_center.z))/full_span
 		var crop := 1.0 if use_live else span/full_span
-		for y in range(-int(radius),int(radius)):
-			var half := sqrt(maxf(0,radius*radius-y*y))
-			var dest := Rect2(center+Vector2(-half,y),Vector2(half*2,1.05))
-			var source := Rect2((uv_center+Vector2(-half/(radius*2),float(y)/(radius*2))*crop)*tex_size,Vector2(half/radius,1.05/(radius*2))*crop*tex_size)
-			draw_texture_rect_region(texture,dest,source)
+		draw_map_texture(texture, center, radius, uv_center, crop)
 	draw_arc(center,radius+3,0,TAU,128,CYAN,2,true)
 	var zone := center+(Vector2(arena.zone_center.x,arena.zone_center.z)-focus)*factor
 	var zr: float = arena.zone_radius*factor
@@ -241,3 +240,20 @@ func _draw() -> void:
 	if expanded:
 		draw_string(ThemeDB.fallback_font,center+Vector2(-radius,radius+54),"LIVE/HD [L]     ZOOM + / -     DRAG TO PAN",HORIZONTAL_ALIGNMENT_LEFT,-1,14,CYAN)
 		draw_string(ThemeDB.fallback_font,center+Vector2(-radius,radius+77),"AMBER: YOU  /  RED: FRIEND  /  TAP TO CLOSE",HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color("bed8dc"))
+
+func draw_map_texture(texture: Texture2D, center: Vector2, radius: float, uv_center: Vector2, crop: float) -> void:
+	var points := PackedVector2Array()
+	for point in circle_outline: points.append(center + point * radius)
+	var pixels_per_uv := radius * 2.0 / crop
+	var image_start := center - uv_center * pixels_per_uv
+	var image_end := image_start + Vector2.ONE * pixels_per_uv
+	var image_rect := Rect2(image_start, image_end - image_start)
+	if not image_rect.encloses(Rect2(center - Vector2.ONE * radius, Vector2.ONE * radius * 2.0)):
+		var border := PackedVector2Array([image_start, Vector2(image_end.x, image_start.y), image_end, Vector2(image_start.x, image_end.y)])
+		var clipped := Geometry2D.intersect_polygons(points, border)
+		if clipped.is_empty(): return
+		points = clipped[0]
+	if points.size() < 3: return
+	var uvs := PackedVector2Array()
+	for point in points: uvs.append((point - image_start) / pixels_per_uv)
+	draw_polygon(points, PackedColorArray([Color.WHITE]), uvs, texture)

@@ -311,6 +311,7 @@ func touch_button(key: String,label: String,on: bool=false) -> void:
 
 func _draw() -> void:
 	if arena==null or not arena.active or not arena.fighters.has(arena.local_id):return
+	if arena.radar.expanded:return
 	var body=arena.fighters[arena.local_id]
 	draw_set_transform(Vector2.ZERO,0,Vector2.ONE*frame_scale)
 	var w:=frame_size.x;var h:=frame_size.y

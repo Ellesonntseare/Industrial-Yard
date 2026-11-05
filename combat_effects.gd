@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## Local screen feedback and short world-space hit effects.
-## Call blood() only for an authoritative, confirmed player hit.
+## World impacts only play after the host confirms a hit.
 
 var arena: Node3D
 var overlay: Control
@@ -15,7 +15,8 @@ var previous_phase := ""
 var air_amount := 0.0
 var elapsed := 0.0
 var last_explicit_damage := -10.0
-var blood_nodes: Array[CPUParticles3D] = []
+var impact_nodes: Array[CPUParticles3D] = []
+var hit_numbers: Array[Dictionary] = []
 var dust: CPUParticles3D
 
 func setup(owner_arena: Node3D) -> void:
@@ -56,6 +57,16 @@ func show_damage(amount: float, from: Vector3 = Vector3.ZERO, has_source: bool =
 	source_known = has_source
 	last_explicit_damage = elapsed
 
+func show_hit_number(at: Vector3, health: float, armor: float) -> void:
+	if hit_numbers.size() >= 10: hit_numbers.pop_front()
+	hit_numbers.append({
+		"position": at + Vector3.UP * 0.25,
+		"health": str(maxi(1, roundi(health))),
+		"armor": str(maxi(1, roundi(armor))) + " ARMOR" if armor > 0 else "",
+		"offset": randf_range(18.0, 40.0),
+		"start": elapsed,
+	})
+
 func _process(delta: float) -> void:
 	if not is_instance_valid(arena) or not is_instance_valid(overlay): return
 	elapsed += delta
@@ -67,6 +78,7 @@ func _process(delta: float) -> void:
 		previous_phase = ""
 		air_amount = 0.0
 		hurt_strength = 0.0
+		hit_numbers.clear()
 		overlay.hide()
 		return
 	var body = arena.fighters[arena.local_id]
@@ -90,8 +102,10 @@ func _process(delta: float) -> void:
 	var target_air := 1.0 if phase == "fall" else 0.2 if phase == "parachute" else 0.0
 	air_amount = move_toward(air_amount, target_air, delta*3.0)
 	var drawing := get_meta("drawing") as Control
+	while not hit_numbers.is_empty() and elapsed - hit_numbers[0].start >= 0.75:
+		hit_numbers.pop_front()
 	drawing.queue_redraw()
-	blood_nodes = blood_nodes.filter(func(node): return is_instance_valid(node))
+	impact_nodes = impact_nodes.filter(func(node): return is_instance_valid(node))
 	_update_rotor_dust()
 
 func _draw_feedback(surface: Control) -> void:
@@ -116,21 +130,40 @@ func _draw_feedback(surface: Control) -> void:
 			var radius := minf(size.x,size.y)*.21
 			var alpha := clampf(damage_time/.35,0,1)
 			surface.draw_arc(center,radius,bearing-.31,bearing+.31,22,Color(1.0,.27,.23,alpha),5.0,true)
+	if not arena.radar.expanded:
+		_draw_hit_numbers(surface)
 
-func blood(at: Vector3, normal: Vector3 = Vector3.UP) -> void:
+func _draw_hit_numbers(surface: Control) -> void:
+	var camera := arena.get_viewport().get_camera_3d()
+	if not camera: return
+	var font := ThemeDB.fallback_font
+	for hit in hit_numbers:
+		if camera.is_position_behind(hit.position): continue
+		var progress: float = (elapsed - hit.start) / 0.75
+		var fade := 1.0 - smoothstep(0.4, 1.0, progress)
+		var point := camera.unproject_position(hit.position) + Vector2(hit.offset + progress * 8.0, -16.0 - progress * 44.0)
+		var font_size := roundi(22.0 + 8.0 * maxf(0.0, 1.0 - progress * 6.0))
+		surface.draw_string_outline(font, point, hit.health, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, 6, Color(0.04, 0.05, 0.06, fade))
+		surface.draw_string(font, point, hit.health, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1.0, 0.88, 0.63, fade))
+		if not hit.armor.is_empty():
+			var armor_point := point + Vector2(0.0, 14.0)
+			surface.draw_string_outline(font, armor_point, hit.armor, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 4, Color(0.04, 0.05, 0.06, fade))
+			surface.draw_string(font, armor_point, hit.armor, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.49, 0.85, 1.0, fade))
+
+func bullet_impact(at: Vector3, normal: Vector3, robot: bool) -> void:
 	if not is_instance_valid(arena) or not at.is_finite(): return
-	blood_nodes = blood_nodes.filter(func(node): return is_instance_valid(node))
-	if blood_nodes.size() >= 8: return
+	impact_nodes = impact_nodes.filter(func(node): return is_instance_valid(node))
+	if impact_nodes.size() >= 8: return
 	var effect := CPUParticles3D.new()
 	effect.amount = 22
-	effect.lifetime = 0.38
+	effect.lifetime = 0.23 if robot else 0.32
 	effect.one_shot = true
 	effect.explosiveness = 1.0
 	effect.local_coords = false
-	effect.direction = (normal+Vector3.UP*.5).normalized()
-	effect.spread = 54
-	effect.initial_velocity_min = 0.8
-	effect.initial_velocity_max = 2.7
+	effect.direction = (normal + Vector3.UP * 0.35).normalized()
+	effect.spread = 40 if robot else 50
+	effect.initial_velocity_min = 2.0 if robot else 0.8
+	effect.initial_velocity_max = 5.0 if robot else 2.7
 	effect.gravity = Vector3(0,-8,0)
 	effect.scale_amount_min = .012
 	effect.scale_amount_max = .035
@@ -141,7 +174,8 @@ func blood(at: Vector3, normal: Vector3 = Vector3.UP) -> void:
 	mesh.rings = 3
 	effect.mesh = mesh
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("9b1c2f")
+	mat.albedo_color = Color("ffba52") if robot else Color("9b1c2f")
+	if robot: mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.roughness = .9
 	effect.material_override = mat
 	effect.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -149,7 +183,7 @@ func blood(at: Vector3, normal: Vector3 = Vector3.UP) -> void:
 	effect.global_position = at
 	effect.finished.connect(effect.queue_free)
 	effect.emitting = true
-	blood_nodes.append(effect)
+	impact_nodes.append(effect)
 
 func _update_rotor_dust() -> void:
 	# Do not create a dust cloud under a high-altitude helicopter.

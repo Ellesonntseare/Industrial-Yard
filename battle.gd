@@ -2,6 +2,19 @@ extends "res://yard.gd"
 
 const Fighter = preload("res://arena_player.gd")
 const Radar = preload("res://yard_radar.gd")
+const CARBINE := preload("res://assets/provided/fps_animated_carbine.glb")
+const VEST := preload("res://assets/provided/modern_tactical_vest__plate_carrier.glb")
+const RIFLE_AUDIO := {
+	"ar15_close_01_responsive.wav": preload("res://audio/rifle/ar15_close_01_responsive.wav"),
+	"ar15_close_02_responsive.wav": preload("res://audio/rifle/ar15_close_02_responsive.wav"),
+	"ar15_close_01.wav": preload("res://audio/rifle/ar15_close_01.wav"),
+	"ar15_close_02.wav": preload("res://audio/rifle/ar15_close_02.wav"),
+	"ar15_mid_01.wav": preload("res://audio/rifle/ar15_mid_01.wav"),
+	"ar15_mid_02.wav": preload("res://audio/rifle/ar15_mid_02.wav"),
+	"ar15_magazine_out.wav": preload("res://audio/rifle/ar15_magazine_out.wav"),
+	"ar15_magazine_in.wav": preload("res://audio/rifle/ar15_magazine_in.wav"),
+	"ar15_bolt_release.wav": preload("res://audio/rifle/ar15_bolt_release.wav"),
+}
 const PORT := 27845
 const KINDS := ["RIFLE", "AMMO", "MEDKIT", "ARMOUR", "GRENADE", "BACKPACK"]
 var fighters: Dictionary = {}
@@ -21,9 +34,7 @@ var menu_box: VBoxContainer
 var address: LineEdit
 var mode_select: OptionButton
 var status: Label
-var hud: Label
 var feed: Label
-var reticle: Label
 var radar: Control
 var third_person := true
 var look_yaw := PI
@@ -96,7 +107,7 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(connection_failed)
 	multiplayer.server_disconnected.connect(server_left)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	if DisplayServer.get_name() != "headless": bake_map.call_deferred()
+	if DisplayServer.get_name() != "headless" and not radar.hd_map: bake_map.call_deferred()
 	var args := OS.get_cmdline_user_args()
 	if "--arena-review" in args:
 		review_mode = true
@@ -228,21 +239,10 @@ func build_interface() -> void:
 	outside_tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	outside_tint.hide()
 	layer.add_child(outside_tint)
-	hud = Label.new()
-	hud.position = Vector2(22, 18)
-	hud.add_theme_font_size_override("font_size", 20)
-	hud.add_theme_constant_override("outline_size", 6)
-	layer.add_child(hud)
 	feed = Label.new()
 	feed.position = Vector2(22, 195)
 	feed.add_theme_constant_override("outline_size", 5)
 	layer.add_child(feed)
-	reticle = Label.new()
-	reticle.text = "+"
-	reticle.hide()
-	reticle.add_theme_font_size_override("font_size", 26)
-	reticle.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	layer.add_child(reticle)
 	var aim_widget := preload("res://aim_ring.gd").new()
 	aim_widget.arena = self
 	layer.add_child(aim_widget)
@@ -300,9 +300,7 @@ func build_interface() -> void:
 	build_viewmodel()
 
 func build_viewmodel() -> void:
-	var packed = load("res://assets/provided/fps_animated_carbine.glb") as PackedScene
-	if not packed: return
-	viewmodel = packed.instantiate()
+	viewmodel = CARBINE.instantiate()
 	camera.add_child(viewmodel)
 	viewmodel.scale = Vector3.ONE * 0.35
 	viewmodel.position = Vector3(0.12, -0.38, -0.48)
@@ -404,6 +402,8 @@ func place_training_robot() -> void:
 	bot.phase = "ground"
 	bot.protection = 0
 	bot.weapon = false
+	var tag := bot.get_node("TrainingTag") as Label3D
+	tag.text = "TRAINING ROBOT"
 	bot.reset_physics_interpolation()
 	training_anchor = spot
 	training_goal = spot
@@ -556,8 +556,7 @@ func make_loot_visual(id: int) -> void:
 	mesh.material_override = mat
 	node.add_child(mesh)
 	if loot[id].kind in [0, 3]:
-		var file := "fps_animated_carbine.glb" if loot[id].kind == 0 else "modern_tactical_vest__plate_carrier.glb"
-		var packed := load("res://assets/provided/" + file) as PackedScene
+		var packed := CARBINE if loot[id].kind == 0 else VEST
 		if packed:
 			var model: Node3D = packed.instantiate()
 			node.add_child(model)
@@ -625,6 +624,8 @@ func controls() -> Dictionary:
 	if enabled:
 		axis = Vector2(int(Input.is_physical_key_pressed(KEY_D)) - int(Input.is_physical_key_pressed(KEY_A)), int(Input.is_physical_key_pressed(KEY_S)) - int(Input.is_physical_key_pressed(KEY_W)))
 	var command := {"move": axis.limit_length(), "yaw": look_yaw, "pitch": look_pitch, "run": enabled and Input.is_physical_key_pressed(KEY_SHIFT), "jump": false, "crouch": enabled and Input.is_physical_key_pressed(KEY_CTRL), "aim": enabled and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT), "fire": enabled and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)}
+	command.third_person = third_person
+	command.pitch = clampf(look_pitch + recoil, -1.45, 1.45)
 	return mobile_hud.merge_controls(command) if mobile_hud else command
 
 func _physics_process(delta: float) -> void:
@@ -788,27 +789,63 @@ func interact(id: int) -> void:
 			door.toggle(body.position)
 			return
 
+func shot_eye(body: CharacterBody3D) -> Vector3:
+	return body.global_position + Vector3.UP * (1.05 if body.crouched else 1.64)
+
+func shoulder_camera(eye: Vector3, view: Basis, excluded: Array[RID]) -> Vector3:
+	var desired := eye + view * Vector3(0.5, 0.25, 3.4)
+	var query := PhysicsRayQueryParameters3D.create(eye, desired)
+	query.exclude = excluded
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return desired if hit.is_empty() else hit.position + hit.normal * 0.2
+
+func trace_shot(body: CharacterBody3D, view: Basis, shoulder: bool) -> Dictionary:
+	var eye := shot_eye(body)
+	var direction := -view.z
+	var excluded: Array[RID] = [body.get_rid()]
+	for fighter in fighters.values():
+		if fighter.phase == "dead": excluded.append(fighter.get_rid())
+	var endpoint := eye + direction * 220
+	if shoulder:
+		var sight := shoulder_camera(eye, view, excluded)
+		var sight_query := PhysicsRayQueryParameters3D.create(sight, sight + direction * 220)
+		sight_query.exclude = excluded
+		var aimed := get_world_3d().direct_space_state.intersect_ray(sight_query)
+		var target: Vector3 = sight_query.to if aimed.is_empty() else aimed.position
+		# The camera chooses the point. The shot still starts at the fighter so cover can stop it.
+		if (target - eye).dot(direction) > 0:
+			var aim_direction := eye.direction_to(target)
+			endpoint = eye + aim_direction * minf(220.0, eye.distance_to(target) + 0.03)
+	var shot := PhysicsRayQueryParameters3D.create(eye, endpoint)
+	shot.exclude = excluded
+	shot.hit_from_inside = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(shot)
+	return {"hit": hit, "endpoint": hit.get("position", endpoint)}
+
 func shoot(id: int) -> void:
 	var body = fighters[id]
 	if body.phase != "ground" or not body.weapon or body.magazine <= 0 or body.cooldown > 0 or body.reload_left > 0: return
 	body.magazine -= 1
 	body.cooldown = 0.12
-	var origin: Vector3 = body.position + Vector3.UP * (1.2 if body.crouched else 1.64)
-	var direction: Vector3 = Basis.from_euler(Vector3(body.pitch, body.yaw, 0)) * Vector3.FORWARD
-	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 220)
-	query.exclude = [body.get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	var endpoint: Vector3 = hit.position if not hit.is_empty() else origin + direction * 220
+	var origin := shot_eye(body)
+	var view := Basis.from_euler(Vector3(body.pitch, body.yaw, 0))
+	var trace := trace_shot(body, view, body.command.get("third_person", false))
+	var hit: Dictionary = trace.hit
+	var endpoint: Vector3 = trace.endpoint
 	if not hit.is_empty():
 		for other in fighters:
 			if fighters[other] == hit.collider:
 				var before_hp: float = fighters[other].hp
+				var before_armor: float = fighters[other].armor
 				damage(other, 26, id)
 				if fighters[other].hp < before_hp:
-					if combat_effects: combat_effects.blood(hit.position)
-					if not multiplayer.get_peers().is_empty(): confirmed_impact.rpc(hit.position)
-					if id == local_id: hit_flash = 0.15
-					elif id in multiplayer.get_peers(): confirm_hit.rpc_id(id)
+					var normal: Vector3 = hit.normal if hit.normal != Vector3.ZERO else view.z
+					var health_lost: float = before_hp - fighters[other].hp
+					var armor_lost: float = before_armor - fighters[other].armor
+					confirmed_impact(hit.position, normal, other, id, health_lost, armor_lost)
+					if not multiplayer.get_peers().is_empty():
+						confirmed_impact.rpc(hit.position, normal, other, id, health_lost, armor_lost)
+				break
 	shot_effect(origin, endpoint, id)
 	if multiplayer.get_peers().size() > 0: remote_shot.rpc(origin, endpoint, id)
 
@@ -823,7 +860,7 @@ func shot_effect(from: Vector3, to: Vector3, id: int) -> void:
 	elif id > 0:
 		var sound := AudioStreamPlayer3D.new()
 		var far_shot: bool = fighters.has(local_id) and fighters[local_id].position.distance_to(from) > 35
-		sound.stream = load("res://audio/rifle/ar15_%s_0%s.wav" % ["mid" if far_shot else "close", shot_index])
+		sound.stream = RIFLE_AUDIO["ar15_%s_0%s.wav" % ["mid" if far_shot else "close", shot_index]]
 		sound.volume_db = -9
 		sound.unit_size = 18
 		sound.max_distance = 240
@@ -847,21 +884,21 @@ func shot_effect(from: Vector3, to: Vector3, id: int) -> void:
 
 func play_local_sound(file: String, volume: float) -> void:
 	var sound := AudioStreamPlayer.new()
-	sound.stream = load("res://audio/rifle/" + file)
+	sound.stream = RIFLE_AUDIO[file]
 	sound.volume_db = volume
 	add_child(sound)
 	sound.finished.connect(sound.queue_free)
 	sound.play()
 
-@rpc("authority", "call_remote", "unreliable", 3)
-func confirm_hit() -> void:
-	hit_flash = 0.15
+@rpc("authority", "call_remote", "reliable", 2)
+func confirmed_impact(at: Vector3, normal: Vector3, victim: int, attacker: int, health_lost: float, armor_lost: float) -> void:
+	if attacker == local_id:
+		hit_flash = 0.15
+		if combat_effects: combat_effects.show_hit_number(at, health_lost, armor_lost)
+	if fighters.has(victim): fighters[victim].react_to_hit(normal)
+	if combat_effects: combat_effects.bullet_impact(at, normal, victim == TRAINING_ID)
 
-@rpc("authority", "call_remote", "unreliable", 3)
-func confirmed_impact(at: Vector3) -> void:
-	if combat_effects: combat_effects.blood(at)
-
-@rpc("authority", "call_remote", "unreliable", 3)
+@rpc("authority", "call_remote", "reliable", 2)
 func receive_hurt(amount: float, source: Vector3, source_known: bool) -> void:
 	if combat_effects: combat_effects.show_damage(amount, source, source_known)
 
@@ -878,6 +915,7 @@ func damage(id: int, amount: float, attacker: int) -> void:
 		receive_hurt.rpc_id(id, amount - absorbed, fighters[attacker].position if fighters.has(attacker) else Vector3.ZERO, fighters.has(attacker))
 	if body.hp > 0: return
 	body.phase = "dead"
+	body.collision_layer = 0
 	body.respawn_left = 4.0
 	body.velocity = Vector3.ZERO
 	if id == TRAINING_ID:
@@ -1061,18 +1099,19 @@ func _process(delta: float) -> void:
 	var distance_from_zone := Vector2(body.position.x - zone_center.x, body.position.z - zone_center.z).length()
 	outside_tint.visible = body.phase == "ground" and distance_from_zone > zone_radius
 	var outside_view: bool = third_person or body.phase == "helicopter"
-	body.visual.visible = outside_view and body.phase != "dead"
+	body.visual.visible = outside_view and body.show_pose()
 	recoil = move_toward(recoil, 0, delta * 0.2)
-	var eye: Vector3 = body.position + Vector3.UP * (1.2 if body.crouched else 1.64)
-	var view_basis := Basis.from_euler(Vector3(look_pitch + recoil, look_yaw, 0))
+	var eye := shot_eye(body)
+	if body.phase != "helicopter":
+		eye += body.get_global_transform_interpolated().origin - body.global_position
+	var view_basis := Basis.from_euler(Vector3(clampf(look_pitch + recoil, -1.45, 1.45), look_yaw, 0))
 	camera.global_basis = view_basis
 	var desired := eye
 	if outside_view:
-		desired = eye + view_basis * Vector3(0.5, 0.25, 3.4)
-		var query := PhysicsRayQueryParameters3D.create(eye, desired)
-		query.exclude = [body.get_rid()]
-		var hit := get_world_3d().direct_space_state.intersect_ray(query)
-		if not hit.is_empty(): desired = hit.position + hit.normal * 0.2
+		var excluded: Array[RID] = [body.get_rid()]
+		for fighter in fighters.values():
+			if fighter.phase == "dead": excluded.append(fighter.get_rid())
+		desired = shoulder_camera(eye, view_basis, excluded)
 		if body.phase == "helicopter": desired = eye + view_basis * Vector3(4, 3.0, 12)
 	camera.global_position = desired
 	if viewmodel:
@@ -1081,62 +1120,23 @@ func _process(delta: float) -> void:
 		viewmodel.rotation.x = recoil * 2
 		if gun_animator and viewmodel.visible:
 			var clip_time: float = 3.0 + 3.0 * (1.0 - body.reload_left / 1.8) if body.reload_left > 0 else 6.0
-			gun_animator.seek(clip_time, true)
+			if clip_time != gun_previous_time: gun_animator.seek(clip_time, true)
 			if body.reload_left > 0:
 				var cues := {3.25: "ar15_magazine_out.wav", 4.4: "ar15_magazine_in.wav", 5.3: "ar15_bolt_release.wav"}
 				for frame_time in cues:
 					if gun_previous_time < frame_time and clip_time >= frame_time: play_local_sound(cues[frame_time], -12)
 			gun_previous_time = clip_time
 	camera.fov = lerpf(camera.fov, 55.0 if body.aim else 78.0, 1 - exp(-12 * delta))
-	var stage: String = {"helicopter": "HANGING FROM ROPE · SPACE TO RELEASE", "fall": "FREEFALL · SPACE TO DEPLOY · AUTO CHUTE NEAR GROUND", "parachute": "PARACHUTE · WASD TO STEER", "ground": "ON FOOT", "dead": "RESPAWN IN %s" % ceili(body.respawn_left)}.get(body.phase, body.phase)
-	var ammo_text := "%s / %s" % [body.magazine, body.ammo] if body.weapon else "FIND A RIFLE"
-	var scores := ""
-	for id in fighters:
-		if id == TRAINING_ID: continue
-		scores += "P%s: %s  " % [1 if id == 1 else 2, fighters[id].score]
-	hud.text = "INDUSTRIAL YARD   %s\n%s\nHEALTH %s   ARMOUR %s   AMMO %s\nMED %s   GRENADES %s   %s\nSAFE ZONE %sm  ·  %02d:%02d  ·  %s" % ["PRACTICE" if mode == 2 else "DROP DUEL", stage, ceili(body.hp), ceili(body.armor), ammo_text, body.medkits, body.grenades, "BACKPACK" if body.backpack else "", ceili(zone_radius), int(clock) / 60, int(clock) % 60, scores]
-	if body.reload_left > 0: hud.text += "   RELOADING…"
-	if outside_tint.visible: hud.text += "\nOUTSIDE SAFE ZONE · MOVE INSIDE THE BLUE WALL"
-	if not end_text.is_empty(): hud.text += "\n" + end_text + " · Host F5: rematch"
-	hud.hide()
 	feed.hide()
-	reticle.visible = body.phase != "dead" and not menu.visible
-	if body.phase == "ground" and not menu.visible:
-		var hint := ""
-		for crate in crates:
-			if not crate.opened and body.position.distance_to(crate.position) < 2.6:
-				hint = "E · OPEN SUPPLY CACHE"
-				break
-		if hint.is_empty():
-			for item in loot:
-				if loot[item].ready == 0 and body.position.distance_to(loot[item].p) < 2.8:
-					hint = "E · TAKE " + KINDS[loot[item].kind]
-					break
-		reticle.text = "+" if hint.is_empty() else hint
-	else: reticle.text = "+"
-	if hit_flash > 0: reticle.text = "×"
 	target_scan -= delta
 	if target_scan <= 0:
 		target_scan = 0.05
 		target_under_aim = false
-		var origin: Vector3 = body.position + Vector3.UP * (1.2 if body.crouched else 1.64)
-		var ray := PhysicsRayQueryParameters3D.create(origin, origin - camera.global_basis.z * 220)
-		ray.exclude = [body.get_rid()]
-		var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+		var hit: Dictionary = trace_shot(body, view_basis, third_person).hit
 		if not hit.is_empty():
 			for other in fighters:
 				if other != local_id and fighters[other] == hit.collider and fighters[other].phase != "dead": target_under_aim = true
 	reticle_scale = lerpf(reticle_scale, 1.7 if target_under_aim else 1.0, 1 - exp(-14 * delta))
-	if target_under_aim and hit_flash <= 0: reticle.text = "+"
-	reticle.scale = Vector2.ONE
-	reticle.pivot_offset = reticle.size * 0.5
-	if reticle.text in ["+", "×"]: reticle.text = ""
-	reticle.offset_top = 40
-	reticle.offset_bottom = 70
-	reticle.modulate = Color("ffbc65") if hit_flash > 0 else (Color("ff7065") if target_under_aim else Color.WHITE)
-	reticle.offset_left = -reticle.get_minimum_size().x * 0.5
-	reticle.offset_right = reticle.get_minimum_size().x * 0.5
-	radar.queue_redraw()
 
 func message(text: String) -> void:
 	feed.text = text + "\nWASD move · Shift sprint · Ctrl crouch · Mouse aim/fire\nE loot/door · R reload · H heal · G grenade · V camera · M map · Esc menu"
@@ -1232,23 +1232,28 @@ func connection_review() -> void:
 		fighters[1].phase = "ground"
 		fighters[1].weapon = true
 		fighters[1].magazine = 30
-		fighters[1].yaw = PI
-		fighters[1].pitch = 0
+		look_yaw = PI + 0.083
+		look_pitch = -0.13
 		fighters[other_id].position = floor_at(NORTH_ENTRY + Vector3(0, 0, 10))
 		fighters[other_id].phase = "ground"
 		fighters[other_id].protection = 0
 		await get_tree().physics_frame
 		await get_tree().physics_frame
 		shoot(1)
-	await get_tree().create_timer(1.0).timeout
+	for attempt in range(100):
+		if authority or (fighters.has(local_id) and fighters[local_id].hp < 100 and combat_effects.source_known): break
+		await get_tree().create_timer(0.02).timeout
 	var passed := active and fighters.size() == 2 and loot.size() > 30
 	var combat_synced := false
 	for id in fighters:
 		if id != 1: combat_synced = fighters[id].hp < 100
-	passed = passed and combat_synced and fighters.has(1) and fighters[1].magazine == 29
+	var feedback_synced: bool = hit_flash > 0 and not combat_effects.hit_numbers.is_empty()
+	if not authority and fighters.has(1):
+		feedback_synced = combat_effects.source_known and combat_effects.source_position.distance_to(fighters[1].target_position) < 1.0
+	passed = passed and combat_synced and feedback_synced and fighters.has(1) and fighters[1].magazine == 29
 	var states := {}
 	for id in fighters: states[id] = fighters[id].pack()
-	print("NETWORK_REVIEW authority=", authority, " peers=", fighters.size(), " loot=", loot.size(), " state_bytes=", var_to_bytes(states).size(), " combat_synced=", combat_synced, " passed=", passed)
+	print("NETWORK_REVIEW authority=", authority, " peers=", fighters.size(), " loot=", loot.size(), " state_bytes=", var_to_bytes(states).size(), " combat_synced=", combat_synced, " feedback_synced=", feedback_synced, " passed=", passed)
 	await get_tree().create_timer(3.0).timeout
 	get_tree().quit(0 if passed else 1)
 
@@ -1345,8 +1350,8 @@ func round_review() -> void:
 	body.velocity = Vector3.ZERO
 	opponent.velocity = Vector3.ZERO
 	opponent.protection = 0
-	look_yaw = PI
-	look_pitch = 0
+	look_yaw = PI + 0.083
+	look_pitch = -0.13
 	for frame in range(4): await get_tree().physics_frame
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
@@ -1418,9 +1423,13 @@ func capture_menu() -> void:
 
 func round_screenshot(name: String) -> void:
 	if DisplayServer.get_name() == "headless": return
+	var resume_measurement := measure_frames
+	measure_frames = false
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("res://review/round-" + name + ".png")
+	for frame in range(2): await get_tree().process_frame
+	measure_frames = resume_measurement
 
 func portable_review() -> void:
 	for frame in range(30): await get_tree().physics_frame
@@ -1512,8 +1521,8 @@ func bot_review() -> void:
 	bot.velocity = Vector3.ZERO
 	shooter.position = floor_at(NORTH_ENTRY + Vector3(0, 0, 4))
 	shooter.velocity = Vector3.ZERO
-	look_yaw = PI
-	look_pitch = 0
+	look_yaw = PI + 0.083
+	look_pitch = -0.13
 	await get_tree().create_timer(0.3).timeout
 	checks["indicator_detects_target"] = target_under_aim and reticle_scale > 1.4
 	print("TRAINING_AIM shooter=", shooter.position, " bot=", bot.position, " yaw=", shooter.yaw, " target=", target_under_aim)
@@ -1525,18 +1534,54 @@ func bot_review() -> void:
 	map_click.button_index = MOUSE_BUTTON_LEFT
 	map_click.pressed = true
 	map_click.position = get_viewport().get_visible_rect().size * 0.5
-	Input.parse_input_event(map_click)
-	Input.flush_buffered_events()
+	get_viewport().push_input(map_click, true)
 	await get_tree().process_frame
+	map_click = map_click.duplicate()
 	map_click.pressed = false
-	Input.parse_input_event(map_click)
-	Input.flush_buffered_events()
-	await get_tree().process_frame
+	get_viewport().push_input(map_click, true)
+	for frame in range(2): await get_tree().process_frame
 	checks["map_click_closes"] = not radar.expanded
+	if radar.expanded: radar.toggle_map()
+	var cover := StaticBody3D.new()
+	var blocker := CollisionShape3D.new()
+	var block_shape := BoxShape3D.new()
+	block_shape.size = Vector3(0.3, 0.3, 0.3)
+	blocker.shape = block_shape
+	cover.add_child(blocker)
+	add_child(cover)
+	cover.global_position = shot_eye(shooter) + Vector3(0.0, -0.06, 0.7)
+	for frame in range(3): await get_tree().physics_frame
+	var blocked_view := Basis.from_euler(Vector3(shooter.pitch, shooter.yaw, 0))
+	var blocked_hit: Dictionary = trace_shot(shooter, blocked_view, true).hit
+	shoot(local_id)
+	checks["cover_blocks_shot"] = not blocked_hit.is_empty() and blocked_hit.collider == cover and bot.hp == 100 and hit_flash == 0
+	cover.queue_free()
+	while shooter.cooldown > 0: await get_tree().physics_frame
+	recoil = 0
+	third_person = false
+	look_yaw = PI
+	look_pitch = -0.09
+	bot.armor = 75
+	for frame in range(3): await get_tree().physics_frame
+	shoot(local_id)
+	var number: Dictionary = combat_effects.hit_numbers.back() if not combat_effects.hit_numbers.is_empty() else {}
+	checks["first_person_armor_hit"] = is_equal_approx(bot.hp, 90.9) and is_equal_approx(bot.armor, 58.1)
+	checks["damage_numbers"] = number.get("health") == "9" and number.get("armor") == "17 ARMOR"
+	bot.hp = 100
+	bot.armor = 0
+	third_person = true
+	look_yaw = PI + 0.083
+	look_pitch = -0.13
 	for shot in range(4):
+		while shooter.cooldown > 0: await get_tree().physics_frame
+		recoil = 0
+		for frame in range(2): await get_tree().physics_frame
 		shoot(local_id)
-		await get_tree().create_timer(0.15).timeout
+		if shot == 0:
+			checks["hit_reaction"] = bot.hp == 74 and bot.hit_reaction and bot.hit_reaction.time_left > 0 and hit_flash > 0
+			await round_screenshot("bullet-impact")
 	checks["shots_defeat_bot"] = bot.phase == "dead" and bot.hp == 0 and shooter.score == 1
+	checks["death_animation_visible"] = bot.show_pose() and bot.animator.current_animation == "death"
 	training_enabled = true
 	await get_tree().create_timer(4.5).timeout
 	checks["bot_respawns"] = bot.phase == "ground" and bot.hp == 100
