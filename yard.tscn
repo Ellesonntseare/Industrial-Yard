@@ -1,0 +1,27 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://yard.gd" id="1"]
+[ext_resource type="PackedScene" path="res://downloaded/neighbour_town/industrial_town.glb" id="2"]
+[ext_resource type="PackedScene" path="res://downloaded/neighbour_town/collision.scn" id="3"]
+
+[sub_resource type="Environment" id="Environment_yard"]
+background_mode = 1
+background_color = Color(0.56, 0.66, 0.74, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.82, 0.87, 0.96, 1)
+ambient_light_energy = 0.65
+
+[node name="IndustrialYard" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Map" parent="." instance=ExtResource("2")]
+
+[node name="Collision" parent="." instance=ExtResource("3")]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_yard")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-52, -35, 0)
+light_color = Color(1, 0.94, 0.8, 1)
+light_energy = 1.12
