@@ -1,0 +1,15 @@
+{
+  "checks": {
+    "below_cabin": true,
+    "flight_moves": true,
+    "parachute_still_works": true,
+    "reaches_opposite_edge": true,
+    "release_detaches_rope": true,
+    "rider_follows": true,
+    "rope_visible": true,
+    "rotor_rotates": true,
+    "starts_at_north_edge": true,
+    "tail_rotor_present": true
+  },
+  "passed": true
+}

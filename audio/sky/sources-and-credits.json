@@ -1,0 +1,62 @@
+[
+  {
+    "key": "rotor",
+    "author": "qubodup",
+    "title": "Helicopter Rotor Loop",
+    "page": "https://freesound.org/people/qubodup/sounds/187681/",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "obtained": "Public HQ MP3 preview, not original lossless file",
+    "download_url": "https://cdn.freesound.org/previews/187/187681_71257-hq.mp3",
+    "bytes": 117504,
+    "sha256": "ceef20913cb66bd0c8dde703976d3f3ed7b36a95caec550496a20211d02a360b"
+  },
+  {
+    "key": "wind",
+    "author": "eon_polyphonic",
+    "title": "ARP Odyssey wind",
+    "page": "https://freesound.org/people/eon_polyphonic/sounds/152317/",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "obtained": "Public HQ MP3 preview, not original lossless file",
+    "download_url": "https://cdn.freesound.org/previews/152/152317_2692149-hq.mp3",
+    "bytes": 711655,
+    "sha256": "e733166511563cddb255d972507da9e5c42c0d8a9f9cbdddd5b578f0bd82e803"
+  },
+  {
+    "key": "fabric",
+    "author": "IENBA",
+    "title": "Fabric Flapping",
+    "page": "https://freesound.org/people/IENBA/sounds/701647/",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "obtained": "Public HQ MP3 preview, not original lossless file",
+    "download_url": "https://cdn.freesound.org/previews/701/701647_9616576-hq.mp3",
+    "bytes": 315264,
+    "sha256": "6c23355114c3d12d4c785acbfb10f7e5c854ddeb3bd28527a49289da6907a543"
+  },
+  {
+    "key": "snap",
+    "author": "zembacraftworks",
+    "title": "Canvas Dropcloth Snap 1",
+    "page": "https://freesound.org/people/zembacraftworks/sounds/428337/",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "obtained": "Public HQ MP3 preview, not original lossless file",
+    "download_url": "https://cdn.freesound.org/previews/428/428337_8617763-hq.mp3",
+    "bytes": 18055,
+    "sha256": "903c1e70b51eb2e67d8ab37ddd8adf9092923574e106f0ccffd00b71e93b14c0"
+  },
+  {
+    "key": "landing",
+    "author": "Nox_Sound",
+    "title": "Mountain Boots Rock Jump Sequence",
+    "page": "https://freesound.org/people/Nox_Sound/sounds/558477/",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "obtained": "Public HQ MP3 preview, not original lossless file",
+    "download_url": "https://cdn.freesound.org/previews/558/558477_9250976-hq.mp3",
+    "bytes": 166416,
+    "sha256": "6e57c97f7c2bc8546db211ab8888106ca56188f213a1ca129ba085e48482fbad"
+  }
+]

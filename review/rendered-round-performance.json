@@ -1,0 +1,31 @@
+{
+  "average_fps": 102.285931135408,
+  "frames": 1882,
+  "hitches": [
+    {
+      "clock": 11.7000000000002,
+      "fighters": 1,
+      "loot": 63,
+      "ms": 133.838666666667,
+      "phase": "ground"
+    },
+    {
+      "clock": 12.3166666666669,
+      "fighters": 2,
+      "loot": 63,
+      "ms": 135.809333333333,
+      "phase": "ground"
+    },
+    {
+      "clock": 12.7333333333335,
+      "fighters": 2,
+      "loot": 63,
+      "ms": 132.584333333333,
+      "phase": "ground"
+    }
+  ],
+  "maximum_frame_ms": 135.809333333333,
+  "median_frame_ms": 8.433,
+  "p95_frame_ms": 12.967,
+  "scope": "Rendered scripted PC round at 1280x800; this is not a two-machine or Android performance test."
+}

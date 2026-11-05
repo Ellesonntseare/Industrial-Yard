@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "automatic_deployment": true,
+    "higher_aircraft": true,
+    "landed_alive": true,
+    "practice_no_storm_damage": true,
+    "third_person_default": true,
+    "visible_glide_time": true,
+    "walking_stays_on_ground": true
+  },
+  "freefall_seconds": 5.33333333333333,
+  "glide_seconds": 5.98333333333333,
+  "passed": true
+}

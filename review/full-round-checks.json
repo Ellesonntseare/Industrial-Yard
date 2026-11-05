@@ -1,0 +1,23 @@
+{
+  "checks": {
+    "actual_deployment": true,
+    "actual_freefall": true,
+    "actual_respawn": true,
+    "cache_opened_by_input": true,
+    "elimination_scores": true,
+    "firing_input_hits_opponent": true,
+    "full_height_landing": true,
+    "healing_input": true,
+    "lid_actually_moved": true,
+    "reload_input_completes": true,
+    "rematch_by_input": true,
+    "score_limit_ends_match": true,
+    "supply_caches_present": true,
+    "timed_mode_ends": true,
+    "unarmed_on_aircraft": true,
+    "weapon_looted_by_input": true,
+    "zone_shrinks_and_hurts": true
+  },
+  "note": "Actual full-height physics drop and game input events; multiplayer uses a separate two-process check.",
+  "passed": true
+}

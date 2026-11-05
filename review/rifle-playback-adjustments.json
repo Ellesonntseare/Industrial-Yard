@@ -1,0 +1,14 @@
+[
+  {
+    "source": "ar15_close_01.wav",
+    "output": "ar15_close_01_responsive.wav",
+    "removed_leadin_ms": 82.72916666666667,
+    "changes": "Removed leading delay only; original recorded attack and natural tail preserved. No synthesized layers or pitch changes."
+  },
+  {
+    "source": "ar15_close_02.wav",
+    "output": "ar15_close_02_responsive.wav",
+    "removed_leadin_ms": 81.41666666666667,
+    "changes": "Removed leading delay only; original recorded attack and natural tail preserved. No synthesized layers or pitch changes."
+  }
+]

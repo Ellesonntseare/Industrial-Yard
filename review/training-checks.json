@@ -1,0 +1,14 @@
+{
+  "checks": {
+    "bot_does_not_shoot": true,
+    "bot_moves": true,
+    "bot_on_ground": true,
+    "bot_respawns": true,
+    "full_map_opens": true,
+    "indicator_detects_target": true,
+    "map_click_closes": true,
+    "practice_starts_armed": true,
+    "shots_defeat_bot": true
+  },
+  "passed": true
+}

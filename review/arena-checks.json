@@ -1,0 +1,21 @@
+{
+  "bounds": "[P: (-189.55, -2.871506, -169.1075), S: (379.1, 17.92592, 338.2151)]",
+  "checks": {
+    "armour_absorbs": true,
+    "death_respawn_timer": true,
+    "doors": true,
+    "drop_starts_above_roofs": true,
+    "grenade_created": true,
+    "healing": true,
+    "landed": true,
+    "loot_count": true,
+    "manual_jump": true,
+    "manual_parachute": true,
+    "pickup": true,
+    "reload": true,
+    "respawn_resets_loot": true,
+    "sky_audio_state_hooks": true
+  },
+  "loot": 61,
+  "passed": true
+}
