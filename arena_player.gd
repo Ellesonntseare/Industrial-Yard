@@ -6,27 +6,40 @@ const CROUCH_SPEED := 2.6
 const SOLDIER := preload("res://assets/provided/training_soldier.glb")
 const PARACHUTE := preload("res://assets/provided/army_parachute.glb")
 
-class HitReaction extends SkeletonModifier3D:
+class BodyMotion extends SkeletonModifier3D:
 	const DURATION := 0.26
+	var hips := -1
 	var chest := -1
 	var time_left := 0.0
 	var world_axis := Vector3.ZERO
+	var motion_angles := Vector3.ZERO
+	var heading := 0.0
 
 	func strike(normal: Vector3) -> void:
 		world_axis = Vector3.UP.cross(-normal).normalized()
 		time_left = DURATION if world_axis != Vector3.ZERO else 0.0
 
 	func _process_modification_with_delta(delta: float) -> void:
-		if time_left <= 0.0: return
-		time_left = maxf(0.0, time_left - delta)
-		var elapsed := DURATION - time_left
-		var amount := smoothstep(0.0, 0.045, elapsed) * (1.0 - smoothstep(0.045, DURATION, elapsed))
+		if time_left <= 0.0 and motion_angles.length_squared() <= 0.000001: return
 		var rig := get_skeleton()
-		var chest_basis := rig.get_bone_global_pose(chest).basis.orthonormalized()
-		var rig_axis := (rig.global_basis.inverse() * world_axis).normalized()
-		var bone_axis := chest_basis.inverse() * rig_axis
-		var kick := Quaternion(bone_axis, 0.28 * amount)
-		rig.set_bone_pose_rotation(chest, rig.get_bone_pose_rotation(chest) * kick)
+		var world_to_rig := rig.global_basis.orthonormalized().inverse()
+		var body_to_rig := world_to_rig * Basis(Vector3.UP, heading)
+		if motion_angles.length_squared() > 0.000001:
+			rotate_joint(rig, hips, body_to_rig * (motion_angles * Vector3(0.35, -0.22, -0.42)))
+			rotate_joint(rig, chest, body_to_rig * motion_angles)
+		if time_left > 0.0:
+			time_left = maxf(0.0, time_left - delta)
+			var elapsed := DURATION - time_left
+			var amount := smoothstep(0.0, 0.045, elapsed) * (1.0 - smoothstep(0.045, DURATION, elapsed))
+			rotate_joint(rig, chest, world_to_rig * world_axis * (0.28 * amount))
+
+	func rotate_joint(rig: Skeleton3D, joint: int, rig_rotation: Vector3) -> void:
+		var amount := rig_rotation.length()
+		if joint < 0 or amount < 0.0001: return
+		var joint_basis := rig.get_bone_global_pose(joint).basis.orthonormalized()
+		var axis := joint_basis.inverse() * (rig_rotation / amount)
+		var rotation_offset := Quaternion(axis, amount)
+		rig.set_bone_pose_rotation(joint, rig.get_bone_pose_rotation(joint) * rotation_offset)
 
 var peer_id := 1
 var yaw := 0.0
@@ -59,7 +72,8 @@ var phase_clock := 0.0
 var previous_phase := ""
 var landed_from_air := false
 var embedded_gun: MeshInstance3D
-var hit_reaction: HitReaction
+var body_motion: BodyMotion
+var visual_heading := 0.0
 
 func _ready() -> void:
 	floor_snap_length = 0.35
@@ -131,12 +145,16 @@ func install_model() -> void:
 	var rigs := model_root.find_children("*", "Skeleton3D", true, false)
 	if not rigs.is_empty():
 		var rig := rigs[0] as Skeleton3D
+		var motion := BodyMotion.new()
 		for bone in range(rig.get_bone_count()):
-			if not rig.get_bone_name(bone).begins_with("Bind_Spine1_"): continue
-			hit_reaction = HitReaction.new()
-			hit_reaction.chest = bone
-			rig.add_child(hit_reaction)
-			break
+			var bone_name := rig.get_bone_name(bone)
+			if bone_name.begins_with("Bind_Hips_"): motion.hips = bone
+			elif bone_name.begins_with("Bind_Spine1_"): motion.chest = bone
+		if motion.chest >= 0:
+			body_motion = motion
+			rig.add_child(body_motion)
+		else:
+			motion.free()
 	visual.position.y = 0.9
 	model_root.position.y -= 0.9
 	visual.get_child(0).visible = false
@@ -160,7 +178,9 @@ func animate() -> void:
 		if clip == "crouchWalk": playback_rate = clampf(ground_speed / CROUCH_SPEED, 0.55, 1.2)
 	elif ground_speed > 0.3:
 		var stride_speed := WALK_SPEED
-		if absf(local_velocity.x) > absf(local_velocity.z) * 1.15:
+		var was_strafing := animator.current_animation in ["strafeLeft", "strafeRight"]
+		var sideways_threshold := 0.9 if was_strafing else 1.2
+		if absf(local_velocity.x) > absf(local_velocity.z) * sideways_threshold:
 			clip = "strafeRight" if local_velocity.x > 0 else "strafeLeft"
 		elif local_velocity.z > 0:
 			clip = "backpaddle"
@@ -181,7 +201,7 @@ func animate() -> void:
 		animator.play(clip, blend_time)
 
 func react_to_hit(normal: Vector3) -> void:
-	if hit_reaction and phase != "dead": hit_reaction.strike(normal)
+	if body_motion and phase != "dead": body_motion.strike(normal)
 
 func show_pose() -> bool:
 	return phase != "dead" or previous_phase != "dead" or phase_clock < 1.25
@@ -193,17 +213,30 @@ func _process(delta: float) -> void:
 		phase_clock = 0
 		previous_phase = phase
 	phase_clock += delta
+	if phase == "ground":
+		var turn_response := 24.0 if aim or cooldown > 0.01 else 13.0
+		visual_heading = lerp_angle(visual_heading, rotation.y, 1.0 - exp(-turn_response * delta))
+	else:
+		visual_heading = rotation.y
+	visual.rotation.y = angle_difference(rotation.y, visual_heading)
 	var bank: float = clampf(command.get("move", Vector2.ZERO).x, -1, 1)
 	var pitch_target := -PI * 0.5 if phase == "fall" else 0.0
 	var bank_target := -bank * 0.18 if phase in ["fall", "parachute"] else 0.0
-	if phase == "ground" and not crouched:
-		var motion := global_basis.inverse() * Vector3(velocity.x, 0, velocity.z)
-		pitch_target = clampf(-motion.z / SPRINT_SPEED, -0.5, 1.0) * 0.065
-		bank_target = clampf(-motion.x / WALK_SPEED, -1.0, 1.0) * 0.08
+	if body_motion:
+		var lean := Vector3.ZERO
+		if phase == "ground":
+			var travel := Basis(Vector3.UP, visual_heading).inverse() * Vector3(velocity.x, 0, velocity.z)
+			var restraint := 0.45 if aim or crouched else 1.0
+			lean.x = clampf(-travel.z / SPRINT_SPEED, -0.4, 1.0) * 0.13
+			lean.y = clampf(angle_difference(visual_heading, rotation.y) * 0.35, -0.22, 0.22)
+			lean.z = clampf(-travel.x / WALK_SPEED, -1.0, 1.0) * 0.12
+			lean *= restraint
+		body_motion.heading = visual_heading
+		body_motion.motion_angles = body_motion.motion_angles.lerp(lean, 1.0 - exp(-10.0 * delta)) if phase == "ground" else Vector3.ZERO
+		if phase == "dead": body_motion.time_left = 0.0
 	visual.rotation.x = lerp_angle(visual.rotation.x, pitch_target, 1 - exp(-12 * delta))
 	visual.rotation.z = lerp_angle(visual.rotation.z, bank_target, 1 - exp(-12 * delta))
 	if phase == "dead": visual.visible = show_pose()
-	if phase == "dead" and hit_reaction: hit_reaction.time_left = 0.0
 	if phase == "parachute":
 		var opening := clampf(phase_clock / 0.45, 0.08, 1)
 		canopy.scale = Vector3(opening, opening, opening)
@@ -227,7 +260,9 @@ func drop(at: Vector3) -> void:
 	collision_layer = 1
 	reload_left = 0.0
 	cooldown = 0.0
-	if hit_reaction: hit_reaction.time_left = 0.0
+	if body_motion:
+		body_motion.time_left = 0.0
+		body_motion.motion_angles = Vector3.ZERO
 	protection = 2.0
 	visual.visible = true
 	canopy.visible = false
@@ -282,7 +317,7 @@ func step(delta: float) -> void:
 	animate()
 
 func pack() -> Dictionary:
-	return {"p": position, "v": velocity, "y": yaw, "x": pitch, "hp": hp, "armor": armor, "ammo": ammo, "mag": magazine, "med": medkits, "gren": grenades, "bag": backpack, "gun": weapon, "score": score, "phase": phase, "respawn": respawn_left, "reload": reload_left, "crouch": crouched, "cooldown": cooldown, "protection": protection}
+	return {"p": position, "v": velocity, "y": yaw, "x": pitch, "hp": hp, "armor": armor, "ammo": ammo, "mag": magazine, "med": medkits, "gren": grenades, "bag": backpack, "gun": weapon, "score": score, "phase": phase, "respawn": respawn_left, "reload": reload_left, "crouch": crouched, "aim": aim, "cooldown": cooldown, "protection": protection}
 
 func unpack(s: Dictionary, local: bool) -> void:
 	target_position = s.p
@@ -298,6 +333,7 @@ func unpack(s: Dictionary, local: bool) -> void:
 		yaw = s.y
 		pitch = s.x
 		velocity = s.v
+		aim = s.get("aim", false)
 	hp = s.hp
 	armor = s.armor
 	ammo = s.ammo

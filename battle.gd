@@ -609,7 +609,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_B:
 				if training_enabled: place_training_robot()
 	if not active or menu.visible: return
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not review_mode:
 		look_yaw -= event.relative.x * 0.002
 		look_pitch = clampf(look_pitch - event.relative.y * 0.002, -1.45, 1.45)
 
@@ -1245,15 +1245,18 @@ func connection_review() -> void:
 		await get_tree().create_timer(0.02).timeout
 	var passed := active and fighters.size() == 2 and loot.size() > 30
 	var combat_synced := false
+	var movement_rigs_ready := fighters.size() == 2
 	for id in fighters:
 		if id != 1: combat_synced = fighters[id].hp < 100
+		var motion = fighters[id].body_motion
+		movement_rigs_ready = movement_rigs_ready and motion != null and motion.hips >= 0 and motion.chest >= 0
 	var feedback_synced: bool = hit_flash > 0 and not combat_effects.hit_numbers.is_empty()
 	if not authority and fighters.has(1):
 		feedback_synced = combat_effects.source_known and combat_effects.source_position.distance_to(fighters[1].target_position) < 1.0
-	passed = passed and combat_synced and feedback_synced and fighters.has(1) and fighters[1].magazine == 29
+	passed = passed and combat_synced and feedback_synced and movement_rigs_ready and fighters.has(1) and fighters[1].magazine == 29
 	var states := {}
 	for id in fighters: states[id] = fighters[id].pack()
-	print("NETWORK_REVIEW authority=", authority, " peers=", fighters.size(), " loot=", loot.size(), " state_bytes=", var_to_bytes(states).size(), " combat_synced=", combat_synced, " feedback_synced=", feedback_synced, " passed=", passed)
+	print("NETWORK_REVIEW authority=", authority, " peers=", fighters.size(), " loot=", loot.size(), " state_bytes=", var_to_bytes(states).size(), " combat_synced=", combat_synced, " feedback_synced=", feedback_synced, " movement_rigs_ready=", movement_rigs_ready, " passed=", passed)
 	await get_tree().create_timer(3.0).timeout
 	get_tree().quit(0 if passed else 1)
 
@@ -1535,7 +1538,6 @@ func bot_review() -> void:
 	map_click.pressed = true
 	map_click.position = get_viewport().get_visible_rect().size * 0.5
 	get_viewport().push_input(map_click, true)
-	await get_tree().process_frame
 	map_click = map_click.duplicate()
 	map_click.pressed = false
 	get_viewport().push_input(map_click, true)
@@ -1578,7 +1580,7 @@ func bot_review() -> void:
 		for frame in range(2): await get_tree().physics_frame
 		shoot(local_id)
 		if shot == 0:
-			checks["hit_reaction"] = bot.hp == 74 and bot.hit_reaction and bot.hit_reaction.time_left > 0 and hit_flash > 0
+			checks["hit_reaction"] = bot.hp == 74 and bot.body_motion and bot.body_motion.time_left > 0 and hit_flash > 0
 			await round_screenshot("bullet-impact")
 	checks["shots_defeat_bot"] = bot.phase == "dead" and bot.hp == 0 and shooter.score == 1
 	checks["death_animation_visible"] = bot.show_pose() and bot.animator.current_animation == "death"
