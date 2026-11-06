@@ -12,6 +12,7 @@ class TestBody extends Node3D:
 	var weapon := true
 	var weapon_id := "carbine"
 	var c4_count := 2
+	var ice_count := 2
 	var reload_left := 0.0
 	var medkits := 2
 	var grenades := 1
@@ -37,9 +38,10 @@ class TestArena extends Node3D:
 	var look_yaw := 0.0
 	var look_pitch := 0.0
 	var actions := []
+	var messages := []
 	const KINDS := ["RIFLE","AMMO","MEDKIT","ARMOUR","GRENADE","BACKPACK"]
 	func request_action(action): actions.append(action)
-	func message(_value): pass
+	func message(value): messages.append(value)
 
 var ui: Control
 var arena: TestArena
@@ -52,7 +54,7 @@ func press(key: String,index: int,down: bool=true) -> void:
 	event.index=index
 	event.position=ui.center(key)*ui.frame_scale
 	event.pressed=down
-	ui._input(event)
+	root.push_input(event, true)
 
 func run() -> void:
 	arena=TestArena.new()
@@ -67,12 +69,14 @@ func run() -> void:
 	root.add_child(ui)
 	await process_frame
 	ui.touch_layout=true
+	ui.positions=ui.DEFAULTS.duplicate()
+	ui.update_touch_buttons()
 	press("run",0)
 	checks.run_toggles=ui.sprinting
 	press("move",1)
 	var drag:=InputEventScreenDrag.new()
 	drag.index=1;drag.position=(ui.center("move")+Vector2(0,-60))*ui.frame_scale
-	ui._input(drag)
+	root.push_input(drag, true)
 	checks.joystick_moves_forward=ui.movement.y<-.5
 	press("fire",2)
 	checks.fire_with_joystick=ui.firing and ui.movement.length()>.5
@@ -83,6 +87,21 @@ func run() -> void:
 	press("heal",5)
 	press("grenade",6)
 	checks.action_dispatch=arena.actions==["jump","reload","heal","grenade"]
+	press("weapon", 20)
+	press("detonate", 21)
+	press("c4", 22)
+	checks.c4_preview_button=arena.c4_mode
+	press("c4", 22, false)
+	press("c4", 22)
+	checks.extra_action_buttons=arena.actions.slice(4)==["next_weapon","detonate_c4","place_c4"]
+	press("bag", 23)
+	checks.bag_button=arena.messages.size()==1
+	press("ice", 25)
+	checks.ice_button=arena.actions.back()=="place_ice"
+	ui.loot_hint="COLLECT AMMO"
+	ui.update_touch_buttons()
+	press("interact", 24)
+	checks.interact_button=arena.actions.back()=="interact"
 	press("camera",7)
 	checks.camera_toggle=not arena.third_person
 	press("aim",8)

@@ -40,6 +40,9 @@ func run() -> void:
 		if body.embedded_gun: body.embedded_gun.hide()
 		if name == "Fall": body.visual.rotation.x = -PI / 2
 		if name == "Steering": body.visual.rotation.z = -0.18
+		if body.canopy.visible:
+			body.visual_dive = 0.9 if name == "Steering" else 0.0
+			body.update_parachute_visual(0.72 if name == "Pull" else 1.0)
 		var rig: Skeleton3D = body.model_root.find_children("*", "Skeleton3D", true, false)[0]
 		for bone in range(rig.get_bone_count()):
 			if "LeftArm_" in rig.get_bone_name(bone):
@@ -50,8 +53,8 @@ func run() -> void:
 			if not pos.is_finite(): errors.append(name + ": non-finite bone " + rig.get_bone_name(bone))
 		var camera := Camera3D.new()
 		world.add_child(camera)
-		camera.position = Vector3(2.8, 1.8, 3.6) if name not in ["Pull", "Glide", "Steering"] else Vector3(4, 3.5, 7)
-		camera.look_at(Vector3(0, 1, 0) if name not in ["Pull", "Glide", "Steering"] else Vector3(0, 2.6, 0))
+		camera.position = Vector3(2.8, 1.8, 3.6) if name not in ["Pull", "Glide", "Steering"] else Vector3(5, 4.0, 10)
+		camera.look_at(Vector3(0, 1, 0) if name not in ["Pull", "Glide", "Steering"] else Vector3(0, 2.55, 0))
 		camera.fov = 38
 		camera.make_current()
 	for frame in range(8): await process_frame

@@ -1,0 +1,17 @@
+{
+  "checks": {
+    "bot_leaves_survival_health": true,
+    "bot_shoots_gently": true,
+    "bot_uses_ammo": true,
+    "c4_arms": true,
+    "c4_detonates": true,
+    "c4_placed_with_level_aim": true,
+    "forward_dives_faster": true,
+    "ice_intercepts_bullet": true,
+    "ice_placed_by_game_input": true,
+    "ice_prevents_damage": true,
+    "ice_replica_has_collision": true,
+    "release_returns_to_glide": true
+  },
+  "passed": true
+}

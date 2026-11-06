@@ -25,7 +25,7 @@ func run() -> void:
 	var present:Dictionary={}
 	for item in arena.loot.values():
 		if item.kind==0:present[item.get("weapon_id","")]=true
-	record("all_weapons_in_world_loot",present.size()==5)
+	record("all_weapons_in_world_loot",present.size()==arena.Weapons.ids().size())
 	for id in arena.Weapons.ids():
 		var at:Vector3=body.position
 		for item in arena.loot.values():item.ready=9999
@@ -67,12 +67,15 @@ func run() -> void:
 	body.c4_count=2
 	# Aim at the actual side wall, place and detonate via authority.
 	body.yaw=PI*.5;body.pitch=0
+	body.command.yaw=body.yaw
+	body.command.pitch=0.0
 	body.command.third_person=false
 	await physics_frame
 	var hit:Dictionary=arena.c4_surface(body)
 	if hit.is_empty():
 		for yaw in [0.0,PI*.5,PI,-PI*.5]:
 			body.yaw=yaw
+			body.command.yaw=yaw
 			hit=arena.c4_surface(body)
 			if not hit.is_empty():break
 	record("c4_surface_found",not hit.is_empty())

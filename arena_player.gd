@@ -5,7 +5,7 @@ const SPRINT_SPEED := 8.0
 const CROUCH_SPEED := 2.6
 const Characters := preload("res://characters_catalog.gd")
 const Weapons := preload("res://weapons_catalog.gd")
-const PARACHUTE := preload("res://assets/provided/army_parachute.glb")
+const PARACHUTE := preload("res://parachute_rig.gd")
 
 class BodyMotion extends SkeletonModifier3D:
 	const DURATION := 0.26
@@ -15,19 +15,39 @@ class BodyMotion extends SkeletonModifier3D:
 	var world_axis := Vector3.ZERO
 	var motion_angles := Vector3.ZERO
 	var heading := 0.0
+	var relaxed_arms := false
+	var arm_swing := 0.0
+	var arm_pairs: Array[Vector2i] = []
+	var relaxed_joints: Array[int] = []
 
 	func strike(normal: Vector3) -> void:
 		world_axis = Vector3.UP.cross(-normal).normalized()
 		time_left = DURATION if world_axis != Vector3.ZERO else 0.0
 
 	func _process_modification_with_delta(delta: float) -> void:
-		if time_left <= 0.0 and motion_angles.length_squared() <= 0.000001: return
+		if not relaxed_arms and time_left <= 0.0 and motion_angles.length_squared() <= 0.000001: return
 		var rig := get_skeleton()
 		var world_to_rig := rig.global_basis.orthonormalized().inverse()
 		var body_to_rig := world_to_rig * Basis(Vector3.UP, heading)
 		if motion_angles.length_squared() > 0.000001:
 			rotate_joint(rig, hips, body_to_rig * (motion_angles * Vector3(0.35, -0.22, -0.42)))
 			rotate_joint(rig, chest, body_to_rig * motion_angles)
+		if relaxed_arms:
+			# Do not inherit the source walk's weapon-ready shoulder and wrist twist.
+			for joint in relaxed_joints:
+				rig.set_bone_pose_rotation(joint, rig.get_bone_rest(joint).basis.get_rotation_quaternion())
+			for i in range(arm_pairs.size()):
+				var pair := arm_pairs[i]
+				var side := 1.0 if i < 2 else -1.0
+				var lower := i % 2 == 1
+				var target := Vector3(side * .13, -1, side * arm_swing - (.18 if lower else 0.0))
+				var pose := rig.get_bone_global_pose(pair.x)
+				var current := pose.basis * rig.get_bone_rest(pair.y).origin
+				var turn := Basis(Quaternion(current.normalized(), (body_to_rig * target).normalized()))
+				pose.basis = turn * pose.basis
+				var parent := rig.get_bone_parent(pair.x)
+				var parent_basis := rig.get_bone_global_pose(parent).basis
+				rig.set_bone_pose_rotation(pair.x, (parent_basis.inverse() * pose.basis).orthonormalized().get_rotation_quaternion())
 		if time_left > 0.0:
 			time_left = maxf(0.0, time_left - delta)
 			var elapsed := DURATION - time_left
@@ -59,6 +79,7 @@ var weapon_slots: Array[String] = []
 var slot_magazines: Dictionary = {}
 var magazine_capacity := 30
 var c4_count := 0
+var ice_count := 0
 var knife_owned := false
 var held_root: BoneAttachment3D
 var held_id := ""
@@ -70,7 +91,12 @@ var reload_left := 0.0
 var respawn_left := 0.0
 var command := {"move": Vector2.ZERO, "yaw": 0.0, "pitch": 0.0, "run": false, "jump": false}
 var visual: Node3D
-var canopy: MeshInstance3D
+var canopy: Node3D
+var dive_amount := 0.0
+var visual_dive := 0.0
+var character_rig: Skeleton3D
+var left_grip := -1
+var right_grip := -1
 var target_position := Vector3.ZERO
 var target_yaw := 0.0
 var animator: AnimationPlayer
@@ -85,8 +111,10 @@ var landed_from_air := false
 var embedded_gun: MeshInstance3D
 var body_motion: BodyMotion
 var visual_heading := 0.0
+var stride_phase := 0.0
 
 func _ready() -> void:
+	collision_mask = 3
 	floor_snap_length = 0.35
 	var shape := CapsuleShape3D.new()
 	shape.radius = 0.33
@@ -108,30 +136,11 @@ func _ready() -> void:
 	mat.albedo_color = Color("d39b47") if peer_id == 1 else Color("649eb8")
 	mesh.material_override = mat
 	visual.add_child(mesh)
-	canopy = MeshInstance3D.new()
-	var dome := SphereMesh.new()
-	dome.radius = 2.2
-	dome.height = 1.0
-	canopy.mesh = dome
-	canopy.position.y = 3.4
-	canopy.material_override = mat
+	canopy = PARACHUTE.new()
+	canopy.position.y = PARACHUTE.HARNESS_HEIGHT
 	add_child(canopy)
-	canopy.visible = false
-	install_parachute()
+	canopy.hide()
 	install_model()
-
-func install_parachute() -> void:
-	var model: Node3D = PARACHUTE.instantiate()
-	canopy.add_child(model)
-	canopy.mesh = null
-	canopy.position.y = 1.2
-	var mesh_nodes = model.find_children("*", "MeshInstance3D", true, false)
-	if mesh_nodes.is_empty(): return
-	var mesh: MeshInstance3D = mesh_nodes[0]
-	var bounds: AABB = model.global_transform.affine_inverse() * mesh.global_transform * mesh.get_aabb()
-	var ratio := 4.6 / maxf(bounds.size.y, 0.01)
-	model.scale = Vector3.ONE * ratio
-	model.position.y = -bounds.position.y * ratio
 
 func install_model() -> void:
 	model_root = Characters.scene_for(character_id).instantiate()
@@ -163,10 +172,18 @@ func install_model() -> void:
 	var rigs := model_root.find_children("*", "Skeleton3D", true, false)
 	if not rigs.is_empty():
 		var rig := rigs[0] as Skeleton3D
+		character_rig = rig
+		left_grip = rig.find_bone("LeftHand")
+		right_grip = rig.find_bone("RightHand")
 		held_root = BoneAttachment3D.new()
 		held_root.bone_name = "RightHand"
 		rig.add_child(held_root)
 		var motion := BodyMotion.new()
+		for side in ["Left", "Right"]:
+			motion.arm_pairs.append(Vector2i(rig.find_bone(side + "Arm"), rig.find_bone(side + "ForeArm")))
+			motion.arm_pairs.append(Vector2i(rig.find_bone(side + "ForeArm"), rig.find_bone(side + "Hand")))
+			for joint in ["Shoulder", "Arm", "ForeArm", "Hand"]:
+				motion.relaxed_joints.append(rig.find_bone(side + joint))
 		for bone in range(rig.get_bone_count()):
 			var bone_name := rig.get_bone_name(bone)
 			if bone_name == "Hips" or bone_name.begins_with("Bind_Hips_"): motion.hips = bone
@@ -236,7 +253,7 @@ func _process(delta: float) -> void:
 			var gun: Node3D = Weapons.create_world_model(weapon_id)
 			held_root.add_child(gun)
 			gun.rotation_degrees = Vector3(0,90,0)
-			gun.scale = Vector3.ONE * 0.75
+			gun.scale = Vector3.ONE * 1.05
 			held_id = weapon_id
 	if phase != previous_phase:
 		landed_from_air = phase == "ground" and previous_phase in ["fall", "parachute"]
@@ -250,10 +267,16 @@ func _process(delta: float) -> void:
 		visual_heading = rotation.y
 	visual.rotation.y = angle_difference(rotation.y, visual_heading)
 	var bank: float = clampf(command.get("move", Vector2.ZERO).x, -1, 1)
-	var pitch_target := -PI * 0.5 if phase == "fall" else 0.0
+	var dive_target := dive_amount if phase == "parachute" else 0.0
+	visual_dive = move_toward(visual_dive, dive_target, delta * 4.0)
+	var pitch_target := -PI * 0.5 if phase == "fall" else -visual_dive * 0.24
 	var bank_target := -bank * 0.18 if phase in ["fall", "parachute"] else 0.0
 	if body_motion:
 		var lean := Vector3.ZERO
+		var ground_speed := Vector2(velocity.x, velocity.z).length()
+		stride_phase = fposmod(stride_phase + delta * ground_speed * 1.65, TAU)
+		body_motion.relaxed_arms = phase == "ground" and not weapon and not (landed_from_air and phase_clock < .35)
+		body_motion.arm_swing = sin(stride_phase) * minf(.48, ground_speed * .085)
 		if phase == "ground":
 			var travel := Basis(Vector3.UP, visual_heading).inverse() * Vector3(velocity.x, 0, velocity.z)
 			var restraint := 0.45 if aim or crouched else 1.0
@@ -268,11 +291,17 @@ func _process(delta: float) -> void:
 	visual.rotation.z = lerp_angle(visual.rotation.z, bank_target, 1 - exp(-12 * delta))
 	if phase == "dead": visual.visible = show_pose()
 	if phase == "parachute":
-		var opening := clampf(phase_clock / 0.45, 0.08, 1)
-		canopy.scale = Vector3(opening, opening, opening)
-		canopy.rotation.z = visual.rotation.z * 0.5
-	else: canopy.scale = Vector3.ONE
+		update_parachute_visual(clampf(phase_clock / 0.45, 0.08, 1))
 	animate()
+
+func update_parachute_visual(opening: float) -> void:
+	canopy.rotation.z = visual.rotation.z * 0.6
+	canopy.rotation.x = -visual_dive * .19
+	canopy.position.z = -visual_dive * .22
+	if not is_instance_valid(character_rig) or left_grip < 0 or right_grip < 0: return
+	var left_hand := character_rig.to_global(character_rig.get_bone_global_pose(left_grip).origin)
+	var right_hand := character_rig.to_global(character_rig.get_bone_global_pose(right_grip).origin)
+	canopy.update_lines(canopy.to_local(left_hand), canopy.to_local(right_hand), opening)
 
 func drop(at: Vector3) -> void:
 	position = at
@@ -286,6 +315,7 @@ func drop(at: Vector3) -> void:
 	slot_magazines.clear()
 	magazine_capacity = 30
 	c4_count = 0
+	ice_count = 0
 	knife_owned = false
 	magazine = 0
 	ammo = 0
@@ -334,12 +364,18 @@ func step(delta: float) -> void:
 	if crouched: speed = CROUCH_SPEED
 	if aim: speed = minf(speed, 3.2)
 	if phase == "ground" and axis.y > 0: speed *= 0.82
-	if phase == "parachute": speed = 9.0
+	if phase == "parachute":
+		dive_amount = move_toward(dive_amount, clampf(-axis.y, 0, 1), delta * 3.5)
+		speed = lerpf(9.0, 21.0, dive_amount)
+	else: dive_amount = 0.0
 	if phase == "fall": speed = 6.0
 	var acceleration := (32.0 if axis.length_squared() < 0.01 else 29.0) if is_on_floor() else 10.0
 	velocity.x = move_toward(velocity.x, direction.x * speed, acceleration * delta)
 	velocity.z = move_toward(velocity.z, direction.z * speed, acceleration * delta)
-	velocity.y = maxf(velocity.y - (12.0 if phase == "fall" else 20.0) * delta, -7.0 if phase == "parachute" else -28.0)
+	if phase == "parachute":
+		velocity.y = move_toward(velocity.y, -lerpf(7.0, 19.0, dive_amount), delta * 32.0)
+	else:
+		velocity.y = maxf(velocity.y - (12.0 if phase == "fall" else 20.0) * delta, -28.0)
 	if phase == "ground" and is_on_floor() and command.jump:
 		velocity.y = 6.0
 	command.jump = false
@@ -353,7 +389,7 @@ func step(delta: float) -> void:
 	animate()
 
 func pack() -> Dictionary:
-	return {"character": character_id, "weapon_id":weapon_id,"slots":weapon_slots,"slot_mags":slot_magazines,"mag_capacity":magazine_capacity,"c4":c4_count,"knife":knife_owned,"p": position, "v": velocity, "y": yaw, "x": pitch, "hp": hp, "armor": armor, "ammo": ammo, "mag": magazine, "med": medkits, "gren": grenades, "bag": backpack, "gun": weapon, "score": score, "phase": phase, "respawn": respawn_left, "reload": reload_left, "crouch": crouched, "aim": aim, "cooldown": cooldown, "protection": protection}
+	return {"character": character_id, "weapon_id":weapon_id,"slots":weapon_slots,"slot_mags":slot_magazines,"mag_capacity":magazine_capacity,"c4":c4_count,"ice":ice_count,"knife":knife_owned,"p": position, "v": velocity, "y": yaw, "x": pitch, "hp": hp, "armor": armor, "ammo": ammo, "mag": magazine, "med": medkits, "gren": grenades, "bag": backpack, "gun": weapon, "score": score, "phase": phase, "dive": dive_amount, "respawn": respawn_left, "reload": reload_left, "crouch": crouched, "aim": aim, "cooldown": cooldown, "protection": protection}
 
 func unpack(s: Dictionary, local: bool) -> void:
 	target_position = s.p
@@ -376,6 +412,7 @@ func unpack(s: Dictionary, local: bool) -> void:
 	slot_magazines = s.get("slot_mags",{})
 	magazine_capacity = s.get("mag_capacity",30)
 	c4_count = s.get("c4",0)
+	ice_count = s.get("ice", 0)
 	knife_owned = s.get("knife",false)
 	hp = s.hp
 	armor = s.armor
@@ -387,6 +424,7 @@ func unpack(s: Dictionary, local: bool) -> void:
 	weapon = s.gun
 	score = s.score
 	phase = s.phase
+	if not local: dive_amount = s.get("dive", 0.0)
 	var alive_layer := 0 if phase == "dead" else 1
 	if collision_layer != alive_layer: collision_layer = alive_layer
 	respawn_left = s.respawn

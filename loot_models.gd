@@ -17,6 +17,18 @@ static func create_loot(kind: int, weapon_id: String = "carbine") -> Node3D:
 	root.set_meta("kind", kind)
 	root.set_meta("weapon_id", weapon_id)
 	var model: Node3D
+	if kind == 7:
+		var pickup := MeshInstance3D.new()
+		var mesh := PrismMesh.new()
+		mesh.size = Vector3(.45, .58, .29)
+		var frost := StandardMaterial3D.new()
+		frost.albedo_color = Color("8fe9ff")
+		frost.emission_enabled = true
+		frost.emission = Color("236c89")
+		pickup.mesh = mesh
+		pickup.material_override = frost
+		root.add_child(pickup)
+		return root
 	if kind == 0:
 		model = WeaponsCatalog.create_world_model(weapon_id)
 	elif ITEM_MODELS.has(kind):
@@ -38,10 +50,10 @@ static func create_loot(kind: int, weapon_id: String = "carbine") -> Node3D:
 		bounds = box if first else bounds.merge(box)
 		first = false
 		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		part.visibility_range_end = 50.0
+		part.visibility_range_end = 75.0
 	if not first:
-		var desired_size: float = 0.85 if kind == 0 else ITEM_SIZES[kind]
-		if kind == 0 and weapon_id in ["pistol", "knife"]: desired_size = 0.33
+		var desired_size: float = 1.40 if kind == 0 else ITEM_SIZES[kind]
+		if kind == 0 and weapon_id in ["pistol", "knife"]: desired_size = 0.64
 		var ratio := desired_size / maxf(0.001, maxf(bounds.size.x, maxf(bounds.size.y, bounds.size.z)))
 		model.scale *= ratio
 		model.position = -bounds.get_center() * ratio

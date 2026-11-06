@@ -14,6 +14,7 @@ var button_scale := 1.0
 var button_opacity := 0.62
 var editing := false
 var finger_roles: Dictionary = {}
+var touch_buttons: Dictionary = {}
 var positions: Dictionary = {}
 var settings: PanelContainer
 var settings_open := false
@@ -40,7 +41,7 @@ const DEFAULTS = {
 	"jump": Vector2(.93,.79), "crouch": Vector2(.84,.79),
 	"reload": Vector2(.76,.85), "camera": Vector2(.94,.30),
 	"heal": Vector2(.44,.92), "grenade": Vector2(.50,.92),
-	"bag": Vector2(.56,.92), "weapon":Vector2(.65,.92), "c4":Vector2(.70,.72), "detonate":Vector2(.70,.60), "interact": Vector2(.50,.78)
+	"bag": Vector2(.56,.92), "weapon":Vector2(.65,.92), "c4":Vector2(.70,.72), "detonate":Vector2(.70,.60), "ice": Vector2(.70,.46), "interact": Vector2(.50,.78)
 }
 
 func setup(owner_arena: Node3D) -> void:
@@ -53,6 +54,7 @@ func _ready() -> void:
 	touch_layout = OS.has_feature("android") or "--touch-preview" in OS.get_cmdline_user_args()
 	load_preferences()
 	build_settings()
+	build_touch_buttons()
 
 func load_preferences() -> void:
 	var config := ConfigFile.new()
@@ -74,12 +76,55 @@ func save_preferences() -> void:
 	for key in positions: config.set_value("positions",key,positions[key])
 	config.save(CONFIG)
 
+func build_touch_buttons() -> void:
+	# Native touch nodes retain the pressing finger and handle viewport transforms.
+	for key in DEFAULTS:
+		if key == "move": continue
+		var button := TouchScreenButton.new()
+		button.name = "Touch_" + key
+		button.passby_press = false
+		button.visibility_mode = TouchScreenButton.VISIBILITY_ALWAYS
+		button.shape = RectangleShape2D.new() if key == "interact" else CircleShape2D.new()
+		button.pressed.connect(press_action.bind(key))
+		button.released.connect(func():
+			if key == "fire": firing = false)
+		button.hide()
+		add_child(button)
+		touch_buttons[key] = button
+
+func update_touch_buttons() -> void:
+	var enabled := touch_layout and playable()
+	for key in touch_buttons:
+		var button: TouchScreenButton = touch_buttons[key]
+		button.position = center(key) * frame_scale
+		if key == "interact": button.shape.size = Vector2(340, 64) * frame_scale
+		else: button.shape.radius = (radius(key) + 8) * frame_scale
+		button.visible = enabled and (key != "interact" or not loot_hint.is_empty())
+
+func press_action(key: String) -> void:
+	if not playable(): return
+	match key:
+		"run": sprinting = not sprinting
+		"aim": aiming = not aiming
+		"fire": firing = true
+		"crouch": crouching = not crouching
+		"camera": arena.third_person = not arena.third_person
+		"bag": arena.message("KEYCARD: " + ("CARRIED" if arena.armory and arena.armory.keycard_owner == arena.local_id else "FIND THE ARMORY KEYCARD"))
+		"weapon": arena.request_action("next_weapon")
+		"c4":
+			if arena.c4_mode: arena.request_action("place_c4")
+			else: arena.c4_mode = true
+		"detonate": arena.request_action("detonate_c4")
+		"ice": arena.request_action("place_ice")
+		"heal", "jump", "reload", "grenade", "interact": arena.request_action(key)
+
 func reset_inputs() -> void:
 	movement = Vector2.ZERO
 	sprinting = false
 	aiming = false
 	firing = false
 	crouching = false
+	for button in touch_buttons.values(): button.hide()
 	finger_roles.clear()
 	joystick_finger = -99
 	look_finger = -99
@@ -87,7 +132,7 @@ func reset_inputs() -> void:
 	drag_name = ""
 
 func playable() -> bool:
-	return arena != null and arena.active and not arena.menu.visible and not settings_open and not editing and arena.fighters.has(arena.local_id) and arena.fighters[arena.local_id].phase != "dead" and arena.end_text.is_empty()
+	return arena != null and arena.active and not arena.menu.visible and not settings_open and not editing and not arena.radar.expanded and arena.fighters.has(arena.local_id) and arena.fighters[arena.local_id].phase != "dead" and arena.end_text.is_empty()
 
 func merge_controls(command: Dictionary) -> Dictionary:
 	if not playable():
@@ -100,7 +145,7 @@ func merge_controls(command: Dictionary) -> Dictionary:
 	command.move = (command.move + movement).limit_length()
 	command.run = command.run or sprinting
 	# Touch-to-mouse emulation must not turn joystick/setup touches into shots.
-	command.fire = firing if touch_layout else command.fire
+	command.fire = (firing or (touch_buttons.has("fire") and touch_buttons.fire.is_pressed())) if touch_layout else command.fire
 	command.aim = aiming if touch_layout else command.aim
 	command.crouch = command.crouch or crouching
 	return command
@@ -188,6 +233,9 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if settings_open: return
+	# Android creates mouse events from the first touch for menu widgets.
+	# Gameplay uses real touch IDs; never count the emulated event as a second finger.
+	if event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION: return
 	var idx := -99
 	var point := Vector2.ZERO
 	var pressed := false
@@ -195,7 +243,7 @@ func _input(event: InputEvent) -> void:
 	var is_drag := false
 	var delta := Vector2.ZERO
 	if event is InputEventScreenTouch:
-		idx=event.index;point=event.position;pressed=event.pressed;is_press=true
+		idx=event.index;point=event.position;pressed=event.pressed and not event.canceled;is_press=true
 	elif event is InputEventScreenDrag:
 		idx=event.index;point=event.position;delta=event.relative;is_drag=true
 	elif touch_layout and event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT and Input.mouse_mode!=Input.MOUSE_MODE_CAPTURED:
@@ -229,26 +277,17 @@ func _input(event: InputEvent) -> void:
 			if key=="interact" and loot_hint.is_empty():continue
 			var inside := Rect2(center(key)-Vector2(170,26),Vector2(340,52)).has_point(point) if key=="interact" else point.distance_to(center(key))<=radius(key)+8
 			if inside:
-				finger_roles[idx]=key
-				match key:
-					"move": joystick_finger=idx; update_joystick(point)
-					"run": sprinting=not sprinting
-					"aim": aiming=not aiming
-					"fire": firing=true
-					"crouch": crouching=not crouching
-					"camera": arena.third_person=not arena.third_person
-					"bag": arena.message("KEYCARD: " + ("CARRIED" if arena.armory and arena.armory.keycard_owner==arena.local_id else "FIND THE ARMORY KEYCARD"))
-					"weapon": arena.request_action("next_weapon")
-					"c4":
-						if arena.c4_mode:arena.request_action("place_c4")
-						else:arena.c4_mode=true
-					"detonate":arena.request_action("detonate_c4")
-					"heal": arena.request_action("heal")
-					"jump": arena.request_action("jump")
-					"reload": arena.request_action("reload")
-					"grenade": arena.request_action("grenade")
-					"interact": arena.request_action("interact")
-				get_viewport().set_input_as_handled();return
+				if key == "move":
+					finger_roles[idx] = key
+					joystick_finger = idx
+					update_joystick(point)
+					get_viewport().set_input_as_handled()
+				elif event is InputEventMouseButton:
+					finger_roles[idx] = key
+					press_action(key)
+					get_viewport().set_input_as_handled()
+				# Native TouchScreenButton handles screen touches for actions.
+				return
 		if point.x>frame_size.x*.36 and point.y>165:
 			look_finger=idx;finger_roles[idx]="look";get_viewport().set_input_as_handled()
 	elif is_drag:
@@ -270,6 +309,7 @@ func _process(delta: float) -> void:
 	frame_scale=maxf(frame_scale,.1)
 	frame_size=get_viewport_rect().size/frame_scale
 	if arena==null:return
+	update_touch_buttons()
 	visible=arena.active
 	if not visible:return
 	if not arena.fighters.has(arena.local_id):return
@@ -279,6 +319,7 @@ func _process(delta: float) -> void:
 		last_phase=body.phase
 	if arena.menu.visible:reset_inputs()
 	update_loot_hint(body)
+	update_touch_buttons()
 	last_auto_pickup-=delta
 	if auto_ammo and playable() and loot_kind==1 and last_auto_pickup<=0:
 		arena.request_action("interact");last_auto_pickup=.4
@@ -350,14 +391,14 @@ func _draw() -> void:
 		panel(Rect2(w/2-200,70,400,40));text(Vector2(w/2-180,98),message,21,AMBER)
 		text(Vector2(w/2-95,137),"ALTITUDE %sm"%int(body.position.y),18)
 	if touch_layout:
-		for key in ["move","run","aim","fire","jump","crouch","reload","camera","heal","grenade","bag","weapon","c4","detonate"]:
-			var label: String={"move":"MOVE","run":"RUN","aim":"AIM","fire":"FIRE","jump":"RELEASE" if body.phase=="helicopter" else "DEPLOY" if body.phase=="fall" else "JUMP","crouch":"CROUCH","reload":"RELOAD","camera":"VIEW","heal":"+ %s"%body.medkits,"grenade":"G %s"%body.grenades,"bag":"BAG","weapon":"SWAP","c4":("PLACE " if arena.c4_mode else "C4 ")+str(body.c4_count),"detonate":"BOOM"}[key]
-			touch_button(key,label,(key=="run" and sprinting) or (key=="aim" and aiming) or (key=="crouch" and crouching))
+		for key in ["move","run","aim","fire","jump","crouch","reload","camera","heal","grenade","bag","weapon","c4","detonate","ice"]:
+			var label: String={"move":"MOVE","run":"RUN","aim":"AIM","fire":"FIRE","jump":"RELEASE" if body.phase=="helicopter" else "DEPLOY" if body.phase=="fall" else "JUMP","crouch":"CROUCH","reload":"RELOAD","camera":"VIEW","heal":"+ %s"%body.medkits,"grenade":"G %s"%body.grenades,"bag":"BAG","weapon":"SWAP","c4":("PLACE " if arena.c4_mode else "C4 ")+str(body.c4_count),"detonate":"BOOM","ice":"ICE %s" % body.ice_count}[key]
+			touch_button(key,label,(key=="fire" and firing) or (key=="run" and sprinting) or (key=="aim" and aiming) or (key=="crouch" and crouching))
 		draw_circle(center("move")+movement*radius("move")*.65,27*button_scale,Color(.65,.8,.83,.45))
 	else:
 		panel(Rect2(w/2-155,h-80,310,52))
 		text(Vector2(w/2-135,h-47),"H  + %s     G  %s     %s"%[body.medkits,body.grenades,"BACKPACK" if body.backpack else "BAG -"],20)
-		text(Vector2(32,h-120),"SHIFT RUN   V VIEW   Q / 1-5 WEAPONS   C / F C4   X DETONATE",15,CYAN)
+		text(Vector2(32,h-120),"SHIFT RUN   V VIEW   Q / 1-8 WEAPONS   C / F C4   X DETONATE   I ICE WALL",15,CYAN)
 	if arena.c4_mode:
 		panel(Rect2(w/2-225,150,450,38))
 		text(Vector2(w/2-205,176),"C4 %s  /  F PLACE  /  X DETONATE  /  C CANCEL"%body.c4_count,16,AMBER)

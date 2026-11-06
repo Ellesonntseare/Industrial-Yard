@@ -1,9 +1,9 @@
 {
   "checks": {
-    "bot_does_not_shoot": true,
     "bot_moves": true,
     "bot_on_ground": true,
     "bot_respawns": true,
+    "bot_starts_armed": true,
     "cover_blocks_shot": true,
     "damage_numbers": true,
     "death_animation_visible": true,

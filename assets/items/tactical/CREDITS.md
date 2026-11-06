@@ -7,3 +7,5 @@
 - `knife.glb`, `backpack.glb` and `c4.glb` were authored for this project from mesh primitives with rounded geometry, separate material regions, and appropriately shaped components. These are reusable mesh assets, with no downloaded source material.
 
 Kenney ammunition magazine and grenade source files and CC0 license remain in `assets/items/kenney`.
+
+`smg.glb`, `battle_rifle.glb`, and `marksman.glb` are the MP5A4, Scar-H, and SVDs meshes from the same CC0 BlendSwap pack. The models were isolated, scaled and given a simple gunmetal material.

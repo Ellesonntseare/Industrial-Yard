@@ -1,4 +1,6 @@
-# Industrial Yard 0.2.0 playtest
+# Industrial Yard 0.2.1 playtest
+
+Use the 0.2.1 build on both devices for multiplayer. The Android APK can update the earlier playtest in place. Hold FIRE to shoot at the weapon's normal rate and lift your finger to stop. You can move and aim while holding it.
 
 Two-player industrial-yard drop duel for Windows and 64-bit Android. Choose your character, Practice to learn the drop, or Host/Join to play with a friend.
 
@@ -9,13 +11,14 @@ Use the same current version on both devices. For the simplest connection, put b
 ## Included
 
 - Soldier, Cyborg, Android, Casual Man and Ninja, selected from real portraits and saved between sessions. New models are reduced to about 12,500 triangles each.
-- Carbine, AK rifle, pistol, pump shotgun and combat knife. Weapons can be picked up, switched and dropped on death. Each magazine keeps its rounds when switching.
+- Carbine, AK rifle, pistol, pump shotgun, MP5 SMG, SCAR battle rifle, SVD marksman rifle and combat knife. Weapons can be picked up, switched and dropped on death. Each magazine keeps its rounds when switching.
 - Actual mesh pickups for weapons, ammunition, medical supplies, armour, backpack, grenades and C4.
 - Keycard armory with alarm, furnished weapon displays and collectible rewards.
 - Magnetic C4: green valid / red invalid surface preview, placement on reachable surfaces, arming blink and owner detonation. It follows moving doors and checks cover for blast damage.
+- Ice walls deploy ahead and block bullets and movement for 22 seconds. Shooting Practice starts with three walls and three C4 charges. The training bot fires slow pistol shots, deals up to five damage per hit and stops at 20 health.
 - Grenade physics and blast flash, dust and debris; confirmed hit effects and directional damage feedback.
 - Recorded firearm reports and mechanisms, recorded rotor, wind, cloth and landing sounds. Explosion reports use real agricultural cannon recordings. Sound references and licences are retained.
-- Third-person default, rope release, freefall, visible parachute stage and low-altitude automatic deployment.
+- Third-person default, rope release, freefall, visible parachute stage and low-altitude automatic deployment. Push forward under the canopy to dive faster and release to return to the slower glide.
 - Both players always appear on the map. Saved Android controls include Run above Move, weapon switch, C4 placement and detonation.
 
 ## PC controls
@@ -27,8 +30,9 @@ Use the same current version on both devices. For the simplest connection, put b
 | Space | Release rope, deploy parachute, jump |
 | Left / right mouse | Fire or knife attack / aim |
 | R / E | Reload / collect, cache, keycard or door |
-| Q / 1-5 | Switch weapon / select slot |
+| Q / 1-8 | Switch weapon / select slot |
 | C / F / X | Toggle C4 preview / place / detonate your charges |
+| I | Deploy ice wall |
 | H / G | Heal / throw grenade |
 | V | Change camera |
 | M / Tab | Expand map / release mouse |
@@ -36,7 +40,7 @@ Use the same current version on both devices. For the simplest connection, put b
 | B | Bring training target nearby in Practice |
 | F5 | Host rematch after a match ends |
 
-On Android, use the on-screen buttons. C4 first enables the preview and the next tap places it; BOOM detonates armed charges. Controls settings let you move buttons and adjust size, opacity and camera sensitivity.
+On Android, use the on-screen buttons. ICE deploys bullet-blocking cover. C4 first enables the preview and the next tap places it; BOOM detonates armed charges. Controls settings let you move buttons and adjust size, opacity and camera sensitivity.
 
 ## Install
 
@@ -45,7 +49,7 @@ Android: open Industrial-Yard-Android.apk on a 64-bit Android 7.0+ phone. Permit
 
 ## Verification and remaining limits
 
-Scripted checks pass for the full round, flight, fall safety, ground movement, training combat, 39 new-content checks, mobile control events, and two simultaneous local host/client processes including confirmed damage and directional feedback. The exported PC pack also passes its startup/content check. APK package and signature verification pass. These checks do not establish physical-phone frame rate or a complete match between two separate physical devices. New automatic character skinning and sky poses still need animation polish. Live overhead rendering can cost performance; the HD map fallback remains available. Ice-wall placement is not implemented.
+Scripted checks pass for the full round, flight, fall safety, ground movement, training combat, 48 new-content checks, mobile control events, and two simultaneous local host/client processes including confirmed damage and directional feedback. The exported PC pack also passes its startup/content check. APK package and signature verification pass. These checks do not establish physical-phone frame rate or a complete match between two separate physical devices. New automatic character skinning still need animation polish. Live overhead rendering can cost performance; the HD map fallback remains available.
 
 ## Source
 

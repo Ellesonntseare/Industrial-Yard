@@ -1,0 +1,21 @@
+{
+  "checks": {
+    "action_dispatch": true,
+    "aim_crouch_toggles": true,
+    "bag_button": true,
+    "c4_preview_button": true,
+    "camera_toggle": true,
+    "dead_blocks_input": true,
+    "extra_action_buttons": true,
+    "fire_releases": true,
+    "fire_with_joystick": true,
+    "ice_button": true,
+    "interact_button": true,
+    "joystick_moves_forward": true,
+    "merged_controls": true,
+    "run_toggles": true,
+    "settings_clear_held_input": true,
+    "touch_does_not_emulate_fire": true
+  },
+  "passed": true
+}

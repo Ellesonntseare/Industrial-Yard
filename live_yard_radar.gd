@@ -39,7 +39,9 @@ func toggle_map() -> void:
 	if expanded:
 		zoom = 1.0
 		pan = Vector2.ZERO
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if expanded else Input.MOUSE_MODE_CAPTURED
+	if expanded: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif arena.has_method("capture_game_pointer"): arena.capture_game_pointer()
+	else: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	queue_redraw()
 
 func _process(delta: float) -> void:

@@ -1,0 +1,30 @@
+{
+  "checks": {
+    "emulated_mouse_ignored_1280": true,
+    "emulated_mouse_ignored_2400": true,
+    "emulated_mouse_ignored_800": true,
+    "hold_fires_repeatedly_1280": true,
+    "hold_fires_repeatedly_2400": true,
+    "hold_fires_repeatedly_800": true,
+    "move_aim_fire_together_1280": true,
+    "move_aim_fire_together_2400": true,
+    "move_aim_fire_together_800": true,
+    "other_finger_release_keeps_firing_1280": true,
+    "other_finger_release_keeps_firing_2400": true,
+    "other_finger_release_keeps_firing_800": true,
+    "phone_keeps_pointer_visible": true,
+    "press_starts_1280": true,
+    "press_starts_2400": true,
+    "press_starts_800": true,
+    "release_stops_firing_1280": true,
+    "release_stops_firing_2400": true,
+    "release_stops_firing_800": true,
+    "reload_reaches_game_1280": true,
+    "reload_reaches_game_2400": true,
+    "reload_reaches_game_800": true,
+    "settings_release_fire_1280": true,
+    "settings_release_fire_2400": true,
+    "settings_release_fire_800": true
+  },
+  "passed": true
+}

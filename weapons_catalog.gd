@@ -6,6 +6,9 @@ const DEFINITIONS := {
 	"pistol": {"name": "PISTOL", "magazine": 12, "damage": 24.0, "interval": 0.28, "reload": 1.35, "range": 100.0, "pellets": 1, "spread": 0.006},
 	"shotgun": {"name": "PUMP SHOTGUN", "magazine": 6, "damage": 12.0, "interval": 0.9, "reload": 2.8, "range": 45.0, "pellets": 8, "spread": 0.065},
 	"knife": {"name": "COMBAT KNIFE", "magazine": 1, "damage": 45.0, "interval": 0.55, "reload": 0.0, "range": 2.1, "pellets": 1, "spread": 0.0},
+	"smg": {"name": "MP5 SMG", "magazine": 32, "damage": 17.0, "interval": 0.085, "reload": 1.55, "range": 105.0, "pellets": 1, "spread": 0.016},
+	"battle_rifle": {"name": "SCAR BATTLE RIFLE", "magazine": 20, "damage": 38.0, "interval": 0.22, "reload": 2.35, "range": 255.0, "pellets": 1, "spread": 0.006},
+	"marksman": {"name": "SVD MARKSMAN", "magazine": 10, "damage": 62.0, "interval": 0.63, "reload": 2.65, "range": 320.0, "pellets": 1, "spread": 0.002},
 }
 const MODEL_DIRECTORY := "res://assets/items/tactical/"
 static var model_cache: Dictionary = {}

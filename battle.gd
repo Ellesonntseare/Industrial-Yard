@@ -19,9 +19,10 @@ const Weapons = preload("res://weapons_catalog.gd")
 const LootModels = preload("res://loot_models.gd")
 const Characters = preload("res://characters_catalog.gd")
 const MagneticCharge = preload("res://magnetic_c4.gd")
+const IceWall = preload("res://ice_wall.gd")
 const ExplosiveFX = preload("res://explosive_fx.gd")
 const PORT := 27845
-const KINDS := ["RIFLE", "AMMO", "MEDKIT", "ARMOUR", "GRENADE", "BACKPACK", "C4"]
+const KINDS := ["RIFLE", "AMMO", "MEDKIT", "ARMOUR", "GRENADE", "BACKPACK", "C4", "ICE WALL"]
 var fighters: Dictionary = {}
 var loot: Dictionary = {}
 var loot_nodes: Dictionary = {}
@@ -95,6 +96,10 @@ var c4_mode := false
 var c4_preview: Node3D
 var charges: Dictionary = {}
 var charge_serial := 0
+var ice_walls: Dictionary = {}
+var ice_serial := 0
+var pending_placements: Array[Dictionary] = []
+var training_fire_delay := 0.0
 var active_view_weapon := ""
 var weapon_view: Node3D
 var last_reload_cues: Dictionary = {}
@@ -354,6 +359,8 @@ func clear_round() -> void:
 	for charge in charges.values():
 		if is_instance_valid(charge): charge.queue_free()
 	charges.clear()
+	clear_ice_walls()
+	pending_placements.clear()
 	c4_mode = false
 	if c4_preview: c4_preview.hide()
 	if viewmodel: viewmodel.hide()
@@ -407,11 +414,13 @@ func shooting_practice() -> void:
 	body.weapon = true
 	body.magazine = 30
 	body.ammo = 240
+	body.c4_count = 3
+	body.ice_count = 3
 	look_yaw = PI
 	look_pitch = 0
 	body.reset_physics_interpolation()
 	place_training_robot()
-	message("Training robot ahead. Practise shooting; it will respawn. B: bring robot nearby.")
+	message("Training robot ahead. It fires slow, low-damage shots. Try C4 and ice cover.")
 
 func place_training_robot() -> void:
 	if not fighters.has(local_id): return
@@ -433,7 +442,10 @@ func place_training_robot() -> void:
 	bot.drop(spot)
 	bot.phase = "ground"
 	bot.protection = 0
-	bot.weapon = false
+	bot.weapon = true
+	bot.weapon_id = "pistol"
+	bot.magazine = 12
+	training_fire_delay = 3.0
 	var tag := bot.get_node("TrainingTag") as Label3D
 	tag.text = "TRAINING ROBOT"
 	bot.reset_physics_interpolation()
@@ -453,8 +465,25 @@ func update_training(delta: float) -> void:
 		if next.is_finite() and absf(next.y - training_anchor.y) < 1: training_goal = next
 	var direction: Vector3 = training_goal - bot.position
 	direction.y = 0
-	var heading := atan2(-direction.x, -direction.z) if direction.length() > 0.3 else 0.0
-	bot.command = {"move": Vector2(0, -0.4) if direction.length() > 0.4 else Vector2.ZERO, "yaw": heading, "pitch": 0.0, "run": false, "jump": false, "fire": false}
+	var player_body = fighters.get(local_id)
+	var move := Vector2.ZERO
+	var heading: float = bot.yaw
+	var pitch := 0.0
+	var fire := false
+	training_fire_delay = maxf(0, training_fire_delay - delta)
+	if player_body and player_body.phase == "ground":
+		var to_player: Vector3 = shot_eye(player_body) - shot_eye(bot)
+		heading = atan2(-to_player.x, -to_player.z)
+		pitch = atan2(to_player.y, Vector2(to_player.x, to_player.z).length())
+		var local_move := Basis(Vector3.UP, heading).inverse() * direction
+		move = Vector2(local_move.x, local_move.z).limit_length(.45)
+		if training_fire_delay <= 0 and to_player.length() < 26 and player_body.hp > 20:
+			var sight: Dictionary = trace_shot(bot, Basis.from_euler(Vector3(pitch, heading, 0)), false).hit
+			if sight.get("collider") == player_body:
+				training_fire_delay = 2.2
+				if bot.magazine <= 0: bot.magazine = 12
+				fire = true
+	bot.command = {"move": move, "yaw": heading, "pitch": pitch, "run": false, "jump": false, "fire": fire}
 	var tag := bot.get_node_or_null("TrainingTag") as Label3D
 	if tag: tag.text = "TRAINING ROBOT · %s HP" % ceili(bot.hp)
 
@@ -498,7 +527,7 @@ func connected() -> void:
 	register_character.rpc_id(1,selected_character)
 	active = true
 	menu.hide()
-	if not review_mode: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not review_mode: capture_game_pointer()
 	message("Connected. Space to jump, then Space to deploy your parachute.")
 
 func connection_failed() -> void:
@@ -531,7 +560,7 @@ func start_round() -> void:
 	spawn_fighter(1)
 	seed_loot()
 	menu.hide()
-	if not review_mode: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not review_mode: capture_game_pointer()
 
 func spawn_fighter(id: int) -> void:
 	var body = Fighter.new()
@@ -564,6 +593,10 @@ func seed_loot() -> void:
 		var p := zone_center + Vector3(rng.randf_range(-arena_bounds.size.x * 0.4, arena_bounds.size.x * 0.4), 0, rng.randf_range(-arena_bounds.size.z * 0.4, arena_bounds.size.z * 0.4))
 		p = floor_at(p)
 		if p.is_finite(): add_loot(i % KINDS.size(), p, Weapons.ids()[int(i / KINDS.size()) % Weapons.ids().size()])
+	# Every weapon remains available even when random loot lands off-map.
+	for i in range(Weapons.ids().size()):
+		var p := floor_at(NORTH_ENTRY + Vector3(-4.5, 0, 5 + i * 3))
+		if p.is_finite(): add_loot(0, p, Weapons.ids()[i])
 	# A reliable nearby supply route also serves movement and pickup tests.
 	for i in range(KINDS.size()):
 		var p := floor_at(NORTH_ENTRY + Vector3(0, 0, 4 + i * 2))
@@ -586,11 +619,11 @@ func make_loot_visual(id: int) -> void:
 	node.add_child(model)
 	var label := Label3D.new()
 	label.text = Weapons.definition(item.get("weapon_id","carbine")).name if item.kind==0 else KINDS[item.kind]
-	label.position.y = 0.55
-	label.font_size = 24
+	label.position.y = 0.72
+	label.font_size = 30
 	label.pixel_size = 0.003
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.visibility_range_end = 18
+	label.visibility_range_end = 27
 	node.add_child(label)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -598,7 +631,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == KEY_ESCAPE:
 			if not active: return
 			menu.visible = not menu.visible
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if menu.visible else Input.MOUSE_MODE_CAPTURED
+			if menu.visible: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			else: capture_game_pointer()
 			return
 		if not active or menu.visible: return
 		match event.physical_keycode:
@@ -607,10 +641,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_3: request_action("slot_2")
 			KEY_4: request_action("slot_3")
 			KEY_5: request_action("slot_4")
+			KEY_6: request_action("slot_5")
+			KEY_7: request_action("slot_6")
+			KEY_8: request_action("slot_7")
 			KEY_Q: request_action("next_weapon")
 			KEY_C: c4_mode = not c4_mode
 			KEY_F: request_action("place_c4")
 			KEY_X: request_action("detonate_c4")
+			KEY_I: request_action("place_ice")
 			KEY_V: third_person = not third_person
 			KEY_M: radar.toggle_map()
 			KEY_TAB:
@@ -628,10 +666,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		look_yaw -= event.relative.x * 0.002
 		look_pitch = clampf(look_pitch - event.relative.y * 0.002, -1.45, 1.45)
 
+func capture_game_pointer() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if mobile_hud and mobile_hud.touch_layout else Input.MOUSE_MODE_CAPTURED
+
 func resume_game() -> void:
 	if not active: return
 	menu.hide()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	capture_game_pointer()
 
 func controls() -> Dictionary:
 	var axis := Vector2.ZERO
@@ -654,6 +695,8 @@ func _physics_process(delta: float) -> void:
 		fighters[local_id].command = command
 		fighters[local_id].command.jump = old_jump
 	if authority:
+		for placement in pending_placements: perform_action(placement.id, placement.action)
+		pending_placements.clear()
 		update_training(delta)
 		if end_text.is_empty() and (mode == 2 or not multiplayer.get_peers().is_empty()): clock += delta
 		zone_radius = zone_start if mode == 2 else lerpf(zone_start, 22.0, clampf((clock - 35.0) / 210.0, 0, 1))
@@ -685,6 +728,7 @@ func _physics_process(delta: float) -> void:
 				var distance := Vector2(body.position.x - zone_center.x, body.position.z - zone_center.z).length()
 				if mode != 2 and body.phase == "ground" and distance > zone_radius: damage(id, 8, 0)
 		update_throwables(delta)
+		update_ice_walls()
 		if training_enabled and not fighters.has(TRAINING_ID) and fighters[local_id].phase == "ground": place_training_robot()
 		for id in loot:
 			if loot[id].ready > 0 and clock >= loot[id].ready:
@@ -720,12 +764,17 @@ func submit_input(command: Dictionary) -> void:
 	fighters[id].command = command
 
 func request_action(action: String) -> void:
-	if authority: perform_action(local_id, action)
+	if authority: queue_or_perform_action(local_id, action)
 	else: submit_action.rpc_id(1, action)
 
 @rpc("any_peer", "call_remote", "reliable", 2)
 func submit_action(action: String) -> void:
-	if authority: perform_action(multiplayer.get_remote_sender_id(), action)
+	if authority: queue_or_perform_action(multiplayer.get_remote_sender_id(), action)
+
+func queue_or_perform_action(id: int, action: String) -> void:
+	if action in ["place_c4", "place_ice"]:
+		if pending_placements.size() < 8: pending_placements.append({"id": id, "action": action})
+	else: perform_action(id, action)
 
 func perform_action(id: int, action: String) -> void:
 	if not fighters.has(id): return
@@ -736,6 +785,9 @@ func perform_action(id: int, action: String) -> void:
 		return
 	if action == "next_weapon":
 		if body.weapon_slots.size()>1:equip_weapon(body,body.weapon_slots[(body.weapon_slots.find(body.weapon_id)+1)%body.weapon_slots.size()])
+		return
+	if action == "place_ice":
+		place_ice_wall(id)
 		return
 	if action == "place_c4":
 		place_c4(id)
@@ -755,6 +807,7 @@ func perform_action(id: int, action: String) -> void:
 				loot[item].ready = 0.0
 				loot_nodes[item].show()
 			loot_dirty = true
+			clear_ice_walls()
 		return
 	if body.phase == "dead" or not end_text.is_empty(): return
 	match action:
@@ -808,6 +861,7 @@ func interact(id: int) -> void:
 			4: body.grenades = mini(4 if body.backpack else 2, body.grenades + 1)
 			5: body.backpack = true
 			6: body.c4_count = mini(4,body.c4_count+1)
+			7: body.ice_count = mini(4, body.ice_count + 1)
 		loot[nearest].ready = clock + 35
 		loot_dirty = true
 		loot_nodes[nearest].hide()
@@ -864,7 +918,7 @@ func shoot(id: int) -> void:
 	if not melee:body.magazine-=1
 	body.cooldown=spec.interval
 	var origin:=shot_eye(body)
-	var view:=Basis.from_euler(Vector3(body.pitch,body.yaw,0))
+	var view:=Basis.from_euler(Vector3(body.pitch, body.yaw, 0))
 	for pellet in range(spec.pellets):
 		var shot_view:=view
 		if pellet>0:shot_view=Basis.from_euler(Vector3(body.pitch+randf_range(-spec.spread,spec.spread),body.yaw+randf_range(-spec.spread,spec.spread),0))
@@ -936,6 +990,9 @@ func damage(id: int, amount: float, attacker: int) -> void:
 	if not fighters.has(id): return
 	var body = fighters[id]
 	if body.phase == "dead" or (body.protection > 0 and attacker != 0): return
+	if attacker == TRAINING_ID:
+		amount = minf(5.0, maxf(0.0, body.hp - 20.0))
+		if amount <= 0: return
 	var absorbed: float = minf(body.armor, amount * 0.65)
 	body.armor -= absorbed
 	body.hp = maxf(0, body.hp - (amount - absorbed))
@@ -1039,15 +1096,16 @@ func send_snapshot() -> void:
 	var door_states: Array[bool] = []
 	for door in doors: door_states.append(door.is_open)
 	for crate in crates: door_states.append(crate.opened)
-	receive_snapshot.rpc(var_to_bytes([states,clock,zone_radius,door_states,mode,end_text,flight_time,armory.pack_state() if armory else {},pack_charges()]).compress(FileAccess.COMPRESSION_DEFLATE))
+	receive_snapshot.rpc(var_to_bytes([states,clock,zone_radius,door_states,mode,end_text,flight_time,armory.pack_state() if armory else {},pack_charges(),pack_ice_walls()]).compress(FileAccess.COMPRESSION_DEFLATE))
 
 @rpc("authority", "call_remote", "unreliable_ordered", 0)
 func receive_snapshot(packet: PackedByteArray) -> void:
 	if authority or packet.size()>16384:return
 	var decoded:=packet.decompress_dynamic(65536,FileAccess.COMPRESSION_DEFLATE)
 	var values=bytes_to_var(decoded)
-	if not values is Array or values.size()!=9:return
+	if not values is Array or values.size() not in [9, 10]:return
 	apply_snapshot(values[0],values[1],values[2],values[3],values[4],values[5],values[6],values[7],values[8])
+	if values.size() == 10: apply_ice_walls(values[9])
 
 func apply_snapshot(states: Dictionary, time: float, radius: float, door_states: Array, game_mode: int, result: String, flight: float, armory_state: Dictionary = {}, charge_state: Dictionary = {}) -> void:
 	if authority: return
@@ -1619,7 +1677,7 @@ func bot_review() -> void:
 	training_enabled = true
 	await get_tree().create_timer(4.5).timeout
 	checks["bot_respawns"] = bot.phase == "ground" and bot.hp == 100
-	checks["bot_does_not_shoot"] = shooter.hp == 100
+	checks["bot_starts_armed"] = fighters[TRAINING_ID].weapon and fighters[TRAINING_ID].weapon_id == "pistol"
 	var passed := true
 	for result in checks.values(): passed = passed and bool(result)
 	var file := FileAccess.open("res://review/training-checks.json", FileAccess.WRITE)
@@ -1703,7 +1761,7 @@ func equip_weapon(body: CharacterBody3D,id: String) -> void:
 	body.knife_owned="knife" in body.weapon_slots
 
 func play_weapon_sound(id: String,at: Vector3,distant: bool,local: bool) -> void:
-	var prefix: String={"ak47":"ak47_close_01","pistol":"pistol_ppq_close_01","shotgun":"shotgun_nova_close_01"}.get(id,"ar15_close_01")
+	var prefix: String={"ak47":"ak47_close_01","pistol":"pistol_ppq_close_01","shotgun":"shotgun_nova_close_01", "smg":"pistol_ppq_close_01", "battle_rifle":"ak47_close_01", "marksman":"ak47_close_01"}.get(id,"ar15_close_01")
 	if distant and id=="ak47":prefix="ak47_mid_01"
 	if distant and id=="carbine":prefix="ar15_mid_01"
 	var path: String="res://audio/weapons/"+prefix+".wav"
@@ -1745,14 +1803,20 @@ func setup_armory() -> void:
 
 func c4_surface(body: CharacterBody3D) -> Dictionary:
 	var eye:=shot_eye(body)
-	var view:=Basis.from_euler(Vector3(body.pitch,body.yaw,0))
+	var view:=Basis.from_euler(Vector3(body.command.get("pitch", body.pitch), body.command.get("yaw", body.yaw), 0))
 	var excluded:Array[RID]=[]
 	for fighter in fighters.values():excluded.append(fighter.get_rid())
 	var origin:=shoulder_camera(eye,view,excluded) if body.command.get("third_person",true) else eye
 	var query:=PhysicsRayQueryParameters3D.create(origin,origin-view.z*10)
 	query.exclude=excluded
 	var hit:=get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty() or eye.distance_to(hit.position)>6:return {}
+	if hit.is_empty() or eye.distance_to(hit.position)>6:
+		# A level reticle over open ground still gets an explicit, visible floor preview.
+		var ahead := body.global_position - Basis(Vector3.UP, body.command.get("yaw", body.yaw)).z * 1.65
+		var floor_query := PhysicsRayQueryParameters3D.create(ahead + Vector3.UP * 1.4, ahead - Vector3.UP * 1.8)
+		floor_query.exclude = excluded
+		hit = get_world_3d().direct_space_state.intersect_ray(floor_query)
+		if hit.is_empty(): return {}
 	var reach:=PhysicsRayQueryParameters3D.create(eye,hit.position)
 	reach.exclude=excluded
 	var block:=get_world_3d().direct_space_state.intersect_ray(reach)
@@ -1777,11 +1841,16 @@ func update_c4_preview() -> void:
 func place_c4(id: int) -> void:
 	if not authority or not fighters.has(id):return
 	var body=fighters[id]
-	if body.phase!="ground" or body.c4_count<=0 or charges.size()>=8:return
-	var hit:=c4_surface(body)
-	if hit.is_empty():return
+	if body.phase != "ground" or charges.size() >= 8: return
+	if body.c4_count <= 0:
+		if id == local_id: message("Find C4 before placing a charge.")
+		return
+	var hit := c4_surface(body)
+	if hit.is_empty():
+		if id == local_id: message("No reachable surface. Aim at a wall or clear floor.")
+		return
 	for existing in charges.values():
-		if existing.global_position.distance_to(hit.position)<.35:return
+		if is_instance_valid(existing) and existing.global_position.distance_to(hit.position) < .35: return
 	body.c4_count-=1
 	charge_serial+=1
 	var charge:=MagneticCharge.new()
@@ -1790,7 +1859,9 @@ func place_c4(id: int) -> void:
 	add_child(charge)
 	charge.configure(hit.position,hit.normal,id,hit.collider)
 	charge.arm()
-	charge.detonation_requested.connect(func(at,owner_id): explosion_damage(at,owner_id,9.0,140.0))
+	charge.detonation_requested.connect(func(at, owner_id):
+		explosion_damage(at, owner_id, 9.0, 140.0, charge.surface_normal))
+	if id == local_id: message("C4 placed. Wait for the arming light, then detonate.")
 	charges[charge_serial]=charge
 
 func detonate_c4(id: int) -> void:
@@ -1803,13 +1874,13 @@ func detonate_c4(id: int) -> void:
 				charges.erase(key)
 				if not multiplayer.get_peers().is_empty():remote_blast.rpc(at)
 
-func explosion_damage(at: Vector3,owner_id: int,radius: float,strength: float) -> void:
+func explosion_damage(at: Vector3,owner_id: int,radius: float,strength: float, normal: Vector3 = Vector3.UP) -> void:
 	for id in fighters:
 		var body=fighters[id]
 		var target:Vector3=body.position+Vector3.UP
 		var distance:float=at.distance_to(target)
 		if body.phase=="dead" or distance>radius:continue
-		var query:=PhysicsRayQueryParameters3D.create(at+Vector3.UP*.05,target)
+		var query:=PhysicsRayQueryParameters3D.create(at + normal * .09, target)
 		var hit:=get_world_3d().direct_space_state.intersect_ray(query)
 		if hit.is_empty() or hit.collider==body:damage(id,strength*(1-distance/radius),owner_id)
 
@@ -1834,3 +1905,67 @@ func apply_charges(states: Dictionary) -> void:
 			add_child(c);charges[key]=c
 		charges[key].configure(state.p,state.n,state.owner)
 		charges[key].armed=state.armed
+
+func place_ice_wall(id: int) -> void:
+	if not authority or not fighters.has(id) or ice_walls.size() >= 8: return
+	var body = fighters[id]
+	if body.phase != "ground": return
+	if body.ice_count <= 0:
+		if id == local_id: message("Find an ice wall pickup first.")
+		return
+	var heading: float = body.command.get("yaw", body.yaw)
+	var basis := Basis(Vector3.UP, heading)
+	var position: Vector3 = floor_at(body.position - basis.z * 3.4) - Vector3.UP * .36
+	if not position.is_finite() or absf(position.y - body.position.y) > .8: return
+	var shape := BoxShape3D.new()
+	shape.size = IceWall.SIZE - Vector3(0, .14, 0)
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = shape
+	query.transform = Transform3D(basis, position + Vector3.UP * (IceWall.SIZE.y * .5 + .1))
+	if not get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty():
+		if id == local_id: message("Ice wall needs clear space ahead.")
+		return
+	body.ice_count -= 1
+	ice_serial += 1
+	add_ice_wall(ice_serial, position, heading, clock + IceWall.LIFETIME)
+	if id == local_id: message("Ice wall up. Use it as cover.")
+
+func add_ice_wall(id: int, position: Vector3, heading: float, expires: float) -> void:
+	var wall := IceWall.new()
+	wall.position = position
+	wall.rotation.y = heading
+	wall.expires_at = expires
+	add_child(wall)
+	ice_walls[id] = wall
+
+func remove_ice_wall(id: int) -> void:
+	var wall: StaticBody3D = ice_walls[id]
+	for charge_id in charges.keys():
+		var charge = charges[charge_id]
+		if is_instance_valid(charge) and charge.get_parent() == wall:
+			charges.erase(charge_id)
+	ice_walls.erase(id)
+	remove_child(wall)
+	wall.queue_free()
+
+func update_ice_walls() -> void:
+	for id in ice_walls.keys():
+		if clock >= ice_walls[id].expires_at: remove_ice_wall(id)
+
+func clear_ice_walls() -> void:
+	for id in ice_walls.keys(): remove_ice_wall(id)
+
+func pack_ice_walls() -> Dictionary:
+	var states := {}
+	for id in ice_walls:
+		var wall = ice_walls[id]
+		states[id] = [wall.position, wall.rotation.y, wall.expires_at]
+	return states
+
+func apply_ice_walls(states: Dictionary) -> void:
+	for id in ice_walls.keys():
+		if not states.has(id): remove_ice_wall(id)
+	for id in states:
+		if not ice_walls.has(id):
+			var state: Array = states[id]
+			add_ice_wall(id, state[0], state[1], state[2])

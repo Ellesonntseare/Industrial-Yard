@@ -5,7 +5,7 @@
     "bones": 21,
     "file_bytes": 966528,
     "texture_max": 1024,
-    "skinning": "two-bone regional distance weights, preserve original A pose"
+    "skinning": "torso-protected skin weights with smooth shoulder transitions"
   },
   {
     "id": "cyborg",
@@ -13,7 +13,7 @@
     "bones": 21,
     "file_bytes": 1106476,
     "texture_max": 1024,
-    "skinning": "two-bone regional distance weights, preserve original A pose"
+    "skinning": "torso-protected skin weights with smooth shoulder transitions"
   },
   {
     "id": "android",
@@ -21,7 +21,7 @@
     "bones": 21,
     "file_bytes": 1058328,
     "texture_max": 1024,
-    "skinning": "two-bone regional distance weights, preserve original A pose"
+    "skinning": "torso-protected skin weights with smooth shoulder transitions"
   },
   {
     "id": "man",
@@ -29,7 +29,7 @@
     "bones": 21,
     "file_bytes": 981144,
     "texture_max": 1024,
-    "skinning": "two-bone regional distance weights, preserve original A pose"
+    "skinning": "torso-protected skin weights with smooth shoulder transitions"
   },
   {
     "id": "ninja",
@@ -37,6 +37,6 @@
     "bones": 21,
     "file_bytes": 970512,
     "texture_max": 1024,
-    "skinning": "two-bone regional distance weights, preserve original A pose"
+    "skinning": "torso-protected skin weights with smooth shoulder transitions"
   }
 ]
