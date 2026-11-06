@@ -40,7 +40,7 @@ const DEFAULTS = {
 	"jump": Vector2(.93,.79), "crouch": Vector2(.84,.79),
 	"reload": Vector2(.76,.85), "camera": Vector2(.94,.30),
 	"heal": Vector2(.44,.92), "grenade": Vector2(.50,.92),
-	"bag": Vector2(.56,.92), "interact": Vector2(.50,.78)
+	"bag": Vector2(.56,.92), "weapon":Vector2(.65,.92), "c4":Vector2(.70,.72), "detonate":Vector2(.70,.60), "interact": Vector2(.50,.78)
 }
 
 func setup(owner_arena: Node3D) -> void:
@@ -237,7 +237,12 @@ func _input(event: InputEvent) -> void:
 					"fire": firing=true
 					"crouch": crouching=not crouching
 					"camera": arena.third_person=not arena.third_person
-					"bag": arena.message("SUPPLIES: ammo, medkits and grenades are shown below")
+					"bag": arena.message("KEYCARD: " + ("CARRIED" if arena.armory and arena.armory.keycard_owner==arena.local_id else "FIND THE ARMORY KEYCARD"))
+					"weapon": arena.request_action("next_weapon")
+					"c4":
+						if arena.c4_mode:arena.request_action("place_c4")
+						else:arena.c4_mode=true
+					"detonate":arena.request_action("detonate_c4")
 					"heal": arena.request_action("heal")
 					"jump": arena.request_action("jump")
 					"reload": arena.request_action("reload")
@@ -282,12 +287,18 @@ func _process(delta: float) -> void:
 func update_loot_hint(body) -> void:
 	loot_hint="";loot_kind=-1
 	if body.phase!="ground":return
+	if arena.armory:
+		loot_hint=arena.armory.hint(arena.local_id)
+		if not loot_hint.is_empty():return
 	for crate in arena.crates:
 		if not crate.opened and body.position.distance_to(crate.position)<2.6:
 			loot_hint="OPEN SUPPLY CACHE";return
 	for id in arena.loot:
 		if arena.loot[id].ready==0 and body.position.distance_to(arena.loot[id].p)<2.8:
-			loot_kind=arena.loot[id].kind;loot_hint="PICK UP "+arena.KINDS[loot_kind];return
+			loot_kind=arena.loot[id].kind
+			var item_name:String=arena.Weapons.definition(arena.loot[id].get("weapon_id","carbine")).name if loot_kind==0 else arena.KINDS[loot_kind]
+			loot_hint="PICK UP "+item_name
+			return
 	for door in arena.doors:
 		if body.position.distance_to(door.global_position)<2.6:
 			loot_hint="USE DOOR";return
@@ -323,8 +334,8 @@ func _draw() -> void:
 	draw_rect(Rect2(147,h-55,176,10),Color(.12,.18,.21))
 	draw_rect(Rect2(147,h-55,176*clampf(body.armor/75,0,1),10),CYAN)
 	panel(Rect2(w-250,h-99,220,74))
-	text(Vector2(w-232,h-74),"CARBINE" if body.weapon else "NO WEAPON",16)
-	text(Vector2(w-232,h-39),"%s / %s"%[body.magazine,body.ammo] if body.weapon else "FIND A RIFLE",29 if body.weapon else 21)
+	text(Vector2(w-232,h-74),arena.Weapons.definition(body.weapon_id).name if body.weapon else "NO WEAPON",16)
+	text(Vector2(w-232,h-39),("MELEE" if body.weapon_id=="knife" else "%s / %s"%[body.magazine,body.ammo]) if body.weapon else "FIND A WEAPON",29 if body.weapon else 21)
 	if body.reload_left>0:text(Vector2(w-232,h-115),"RELOADING",17,AMBER)
 	var peer_score:=0
 	for id in arena.fighters:
@@ -339,14 +350,17 @@ func _draw() -> void:
 		panel(Rect2(w/2-200,70,400,40));text(Vector2(w/2-180,98),message,21,AMBER)
 		text(Vector2(w/2-95,137),"ALTITUDE %sm"%int(body.position.y),18)
 	if touch_layout:
-		for key in ["move","run","aim","fire","jump","crouch","reload","camera","heal","grenade","bag"]:
-			var label: String={"move":"MOVE","run":"RUN","aim":"AIM","fire":"FIRE","jump":"RELEASE" if body.phase=="helicopter" else "DEPLOY" if body.phase=="fall" else "JUMP","crouch":"CROUCH","reload":"RELOAD","camera":"VIEW","heal":"+ %s"%body.medkits,"grenade":"G %s"%body.grenades,"bag":"BAG"}[key]
+		for key in ["move","run","aim","fire","jump","crouch","reload","camera","heal","grenade","bag","weapon","c4","detonate"]:
+			var label: String={"move":"MOVE","run":"RUN","aim":"AIM","fire":"FIRE","jump":"RELEASE" if body.phase=="helicopter" else "DEPLOY" if body.phase=="fall" else "JUMP","crouch":"CROUCH","reload":"RELOAD","camera":"VIEW","heal":"+ %s"%body.medkits,"grenade":"G %s"%body.grenades,"bag":"BAG","weapon":"SWAP","c4":("PLACE " if arena.c4_mode else "C4 ")+str(body.c4_count),"detonate":"BOOM"}[key]
 			touch_button(key,label,(key=="run" and sprinting) or (key=="aim" and aiming) or (key=="crouch" and crouching))
 		draw_circle(center("move")+movement*radius("move")*.65,27*button_scale,Color(.65,.8,.83,.45))
 	else:
 		panel(Rect2(w/2-155,h-80,310,52))
 		text(Vector2(w/2-135,h-47),"H  + %s     G  %s     %s"%[body.medkits,body.grenades,"BACKPACK" if body.backpack else "BAG -"],20)
-		text(Vector2(32,h-120),"SHIFT RUN   V VIEW   M MAP   F8 CONTROLS",15,CYAN)
+		text(Vector2(32,h-120),"SHIFT RUN   V VIEW   Q / 1-5 WEAPONS   C / F C4   X DETONATE",15,CYAN)
+	if arena.c4_mode:
+		panel(Rect2(w/2-225,150,450,38))
+		text(Vector2(w/2-205,176),"C4 %s  /  F PLACE  /  X DETONATE  /  C CANCEL"%body.c4_count,16,AMBER)
 	if not loot_hint.is_empty():
 		var p:=center("interact")
 		panel(Rect2(p-Vector2(170,26),Vector2(340,52)))

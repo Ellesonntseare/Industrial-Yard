@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "build_date": "2026-11-06",
+  "checks": {
+    "new_content_39": true,
+    "packaged_new_content_39": true,
+    "flight": true,
+    "fall_safety": true,
+    "full_round": true,
+    "training": true,
+    "mobile_control_events": true,
+    "two_process_host_client": true,
+    "exported_pc_startup": true,
+    "apk_signature_v2_v3": true,
+    "apk_zip_integrity": true
+  },
+  "android": {
+    "package": "com.elleson.industrialyard",
+    "architecture": "arm64-v8a",
+    "minimum_android": "7.0 (API24)",
+    "target_sdk": 36,
+    "signing": "debug playtest"
+  },
+  "not_verified": [
+    "Physical Android installation and performance",
+    "Full match across two physical devices",
+    "Automatic internet joining (not implemented)"
+  ],
+  "files": {
+    "Industrial-Yard-Android.apk": {
+      "bytes": 191250528,
+      "sha256": "d6ca4e268e3e1796fb00710eb9542ed7e5ed686b4ab8e8dd01e114a93790f7e2"
+    },
+    "Industrial-Yard-PC.zip": {
+      "bytes": 246310732,
+      "sha256": "4b23039a9e976d3c11274383b3501efcad69e0e3dbec3cfeec6568f8c3ef1cc1"
+    }
+  }
+}

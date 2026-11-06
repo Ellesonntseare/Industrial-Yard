@@ -1,29 +1,5 @@
 [
   {
-    "key": "rotor",
-    "author": "qubodup",
-    "title": "Helicopter Rotor Loop",
-    "page": "https://freesound.org/people/qubodup/sounds/187681/",
-    "license": "CC0 1.0",
-    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-    "obtained": "Public HQ MP3 preview, not original lossless file",
-    "download_url": "https://cdn.freesound.org/previews/187/187681_71257-hq.mp3",
-    "bytes": 117504,
-    "sha256": "ceef20913cb66bd0c8dde703976d3f3ed7b36a95caec550496a20211d02a360b"
-  },
-  {
-    "key": "wind",
-    "author": "eon_polyphonic",
-    "title": "ARP Odyssey wind",
-    "page": "https://freesound.org/people/eon_polyphonic/sounds/152317/",
-    "license": "CC0 1.0",
-    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-    "obtained": "Public HQ MP3 preview, not original lossless file",
-    "download_url": "https://cdn.freesound.org/previews/152/152317_2692149-hq.mp3",
-    "bytes": 711655,
-    "sha256": "e733166511563cddb255d972507da9e5c42c0d8a9f9cbdddd5b578f0bd82e803"
-  },
-  {
     "key": "fabric",
     "author": "IENBA",
     "title": "Fabric Flapping",
@@ -58,5 +34,25 @@
     "download_url": "https://cdn.freesound.org/previews/558/558477_9250976-hq.mp3",
     "bytes": 166416,
     "sha256": "6e57c97f7c2bc8546db211ab8888106ca56188f213a1ca129ba085e48482fbad"
+  },
+  {
+    "id": "0263",
+    "file": "0263.wav",
+    "author": "DenisChardonnet",
+    "license": "CC0",
+    "source": "https://bigsoundbank.com/UPLOAD/bwf-en/0263.wav",
+    "page": "https://bigsoundbank.com/s0263.html",
+    "sha256": "decaca5b0fce46c473421c7e4ca660b3df9fa4e1e60d2d872e64e0da036e6be2",
+    "key": "rotor"
+  },
+  {
+    "id": "0146",
+    "file": "0146.wav",
+    "author": "Joseph SARDIN",
+    "license": "CC0",
+    "source": "https://bigsoundbank.com/UPLOAD/bwf-en/0146.wav",
+    "page": "https://bigsoundbank.com/s0146.html",
+    "sha256": "9b62b250ca33821b2f26b1f16f48cef813a9646f476f2c4854766fa25928b808",
+    "key": "wind"
   }
 ]

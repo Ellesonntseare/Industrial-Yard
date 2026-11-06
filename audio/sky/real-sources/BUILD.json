@@ -1,0 +1,23 @@
+[
+  {
+    "file": "helicopter_rotor_loop.ogg",
+    "seconds": 5.6,
+    "rms": 0.11813197893807109,
+    "peak": 0.3964546562359454,
+    "boundary_step": 0.0018156439929191207
+  },
+  {
+    "file": "freefall_wind_loop.ogg",
+    "seconds": 11.6,
+    "rms": 0.045423518205871934,
+    "peak": 0.65,
+    "boundary_step": 0.0006716400512978352
+  },
+  {
+    "file": "parachute_canopy_loop.ogg",
+    "seconds": 7.6,
+    "rms": 0.020552892368216964,
+    "peak": 0.2928885600323246,
+    "boundary_step": 0.0036170456838094055
+  }
+]

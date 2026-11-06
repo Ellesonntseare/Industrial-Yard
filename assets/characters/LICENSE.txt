@@ -1,0 +1,31 @@
+Grab3D: free 3D models (https://grab3d.com)
+
+LICENSE: CC0 1.0 Universal (Public Domain Dedication)
+All models in this archive are dedicated to the public domain. You may copy, modify,
+distribute and use them, even for commercial purposes, without asking permission
+and without attribution.
+Legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+Downloaded: 2026-11-05
+Included files:
+- Cyborg: cyborg/cyborg.glb  (https://grab3d.com/models/characters/cyborg/)
+- Katana: katana/katana.glb  (https://grab3d.com/models/weapons/katana/)
+- Porcelain Android: android/android.glb  (https://grab3d.com/models/characters/android/)
+- Casual Man: man/man.glb  (https://grab3d.com/models/characters/man/)
+- Soldier: soldier/soldier.glb  (https://grab3d.com/models/characters/soldier/)
+- Ninja: ninja/ninja.glb  (https://grab3d.com/models/characters/ninja/)
+
+ORIGIN / AI DISCLOSURE
+AI-assisted (base mesh and textures generated with an AI image-to-3D tool, then edited and checked in Blender).
+If your platform requires disclosure of AI-generated content (for example Steam), these count as AI-assisted:
+- Cyborg (cyborg)
+- Porcelain Android (android)
+- Casual Man (man)
+- Soldier (soldier)
+- Ninja (ninja)
+
+Procedural (built with Blender scripts, no AI model produced the geometry or textures directly).
+The generator scripts were written with the help of an AI coding assistant:
+- Katana (katana)
+
+Details per model: https://grab3d.com/dl/<slug>/LICENSE.txt and https://grab3d.com/dl/<slug>/manifest.json

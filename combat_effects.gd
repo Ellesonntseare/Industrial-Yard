@@ -87,8 +87,8 @@ func _process(delta: float) -> void:
 	# This fallback also covers zone damage and state snapshots. Explicit RPC feedback
 	# supplies shooter direction; do not retrigger that same hit when hp changes.
 	if previous_hp >= 0 and hp < previous_hp and phase != "helicopter" and elapsed-last_explicit_damage > 0.12:
-		show_damage(previous_hp-hp)
-	if hp > previous_hp or (phase == "helicopter" and previous_phase == "dead"):
+		show_damage(previous_hp-hp, source_position, source_known and damage_time > 0)
+	if (previous_hp >= 0 and hp > previous_hp and elapsed-last_explicit_damage > 0.3) or (phase == "helicopter" and previous_phase == "dead"):
 		hurt_strength = minf(hurt_strength, 0.12)
 		damage_time = 0.0
 		source_known = false

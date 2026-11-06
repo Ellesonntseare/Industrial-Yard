@@ -1,0 +1,50 @@
+[
+  {
+    "file": "explosion_cannon_close.wav",
+    "source_page": "https://bigsoundbank.com/explosion-2-s1808.html",
+    "download": "https://bigsoundbank.com/UPLOAD/bwf-en/1808.wav",
+    "author": "Joseph SARDIN / BigSoundBank",
+    "license": "CC0 1.0",
+    "recording": "Real agricultural bird-scarer cannon, 10m",
+    "not_a_recording_of": "C4 or hand grenade",
+    "original_sha256": "d0c74f7c01ab4bebc45f346696be1167af9b6e6c932528215aa0df9932a639bb",
+    "processing": "Mono 48kHz/16bit PCM conversion only; no synth layers or artificial reverb",
+    "original_format": {
+      "programs": [],
+      "streams": [
+        {
+          "sample_rate": "48000",
+          "channels": 1,
+          "bits_per_sample": 24
+        }
+      ],
+      "format": {
+        "duration": "0.325458"
+      }
+    }
+  },
+  {
+    "file": "explosion_cannon_mid.wav",
+    "source_page": "https://bigsoundbank.com/explosion-1-s1807.html",
+    "download": "https://bigsoundbank.com/UPLOAD/bwf-en/1807.wav",
+    "author": "Joseph SARDIN / BigSoundBank",
+    "license": "CC0 1.0",
+    "recording": "Real agricultural bird-scarer cannon, 150m",
+    "not_a_recording_of": "C4 or hand grenade",
+    "original_sha256": "d9e569e5d75bfdd1b48a0d15e81cd9cd63855e356a8964b34ec44caa5ed98433",
+    "processing": "Mono 48kHz/16bit PCM conversion only; no synth layers or artificial reverb",
+    "original_format": {
+      "programs": [],
+      "streams": [
+        {
+          "sample_rate": "48000",
+          "channels": 1,
+          "bits_per_sample": 24
+        }
+      ],
+      "format": {
+        "duration": "0.210958"
+      }
+    }
+  }
+]

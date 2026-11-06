@@ -1,0 +1,42 @@
+[
+  {
+    "id": "soldier",
+    "triangles": 12500,
+    "bones": 21,
+    "file_bytes": 966528,
+    "texture_max": 1024,
+    "skinning": "two-bone regional distance weights, preserve original A pose"
+  },
+  {
+    "id": "cyborg",
+    "triangles": 12500,
+    "bones": 21,
+    "file_bytes": 1106476,
+    "texture_max": 1024,
+    "skinning": "two-bone regional distance weights, preserve original A pose"
+  },
+  {
+    "id": "android",
+    "triangles": 12499,
+    "bones": 21,
+    "file_bytes": 1058328,
+    "texture_max": 1024,
+    "skinning": "two-bone regional distance weights, preserve original A pose"
+  },
+  {
+    "id": "man",
+    "triangles": 12499,
+    "bones": 21,
+    "file_bytes": 981144,
+    "texture_max": 1024,
+    "skinning": "two-bone regional distance weights, preserve original A pose"
+  },
+  {
+    "id": "ninja",
+    "triangles": 12500,
+    "bones": 21,
+    "file_bytes": 970512,
+    "texture_max": 1024,
+    "skinning": "two-bone regional distance weights, preserve original A pose"
+  }
+]

@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cnv3p3bx1jnda"
 path.s3tc="res://.godot/imported/industrial_town_Image_10.png-f31033d9ed80bb29ba7aa4db7780f041.s3tc.ctex"
+path.etc2="res://.godot/imported/industrial_town_Image_10.png-f31033d9ed80bb29ba7aa4db7780f041.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://downloaded/neighbour_town/industrial_town_Image_10.png"
-dest_files=["res://.godot/imported/industrial_town_Image_10.png-f31033d9ed80bb29ba7aa4db7780f041.s3tc.ctex"]
+dest_files=["res://.godot/imported/industrial_town_Image_10.png-f31033d9ed80bb29ba7aa4db7780f041.s3tc.ctex", "res://.godot/imported/industrial_town_Image_10.png-f31033d9ed80bb29ba7aa4db7780f041.etc2.ctex"]
 
 [params]
 

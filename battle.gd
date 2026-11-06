@@ -15,8 +15,13 @@ const RIFLE_AUDIO := {
 	"ar15_magazine_in.wav": preload("res://audio/rifle/ar15_magazine_in.wav"),
 	"ar15_bolt_release.wav": preload("res://audio/rifle/ar15_bolt_release.wav"),
 }
+const Weapons = preload("res://weapons_catalog.gd")
+const LootModels = preload("res://loot_models.gd")
+const Characters = preload("res://characters_catalog.gd")
+const MagneticCharge = preload("res://magnetic_c4.gd")
+const ExplosiveFX = preload("res://explosive_fx.gd")
 const PORT := 27845
-const KINDS := ["RIFLE", "AMMO", "MEDKIT", "ARMOUR", "GRENADE", "BACKPACK"]
+const KINDS := ["RIFLE", "AMMO", "MEDKIT", "ARMOUR", "GRENADE", "BACKPACK", "C4"]
 var fighters: Dictionary = {}
 var loot: Dictionary = {}
 var loot_nodes: Dictionary = {}
@@ -54,7 +59,7 @@ var review_mode := false
 var aircraft: Node3D
 var sky_audio: Node
 var loot_dirty := false
-var use_preview_sky_audio := false
+var use_preview_sky_audio := true
 var zone_wall: MeshInstance3D
 var outside_tint: ColorRect
 var gun_animator: AnimationPlayer
@@ -82,9 +87,26 @@ var target_scan := 0.0
 var target_under_aim := false
 var reticle_scale := 1.0
 
+var selected_character := "soldier"
+var character_choices: Dictionary = {}
+var armory: Node3D
+var armory_furniture: Node3D
+var c4_mode := false
+var c4_preview: Node3D
+var charges: Dictionary = {}
+var charge_serial := 0
+var active_view_weapon := ""
+var weapon_view: Node3D
+var last_reload_cues: Dictionary = {}
+var character_picker: Control
+
 func _ready() -> void:
 	build_doors()
 	find_bounds()
+	var profile := ConfigFile.new()
+	if profile.load("user://industrial-yard-profile.cfg") == OK:
+		selected_character = str(profile.get_value("player","character","soldier"))
+	if not Characters.valid(selected_character): selected_character = "soldier"
 	build_interface()
 	build_aircraft()
 	build_zone()
@@ -92,6 +114,7 @@ func _ready() -> void:
 	add_child(combat_effects)
 	combat_effects.setup(self)
 	build_crates.call_deferred()
+	setup_armory.call_deferred()
 	var environment: Environment = $WorldEnvironment.environment
 	environment.sky = Sky.new()
 	var sky_material := ProceduralSkyMaterial.new()
@@ -254,7 +277,7 @@ func build_interface() -> void:
 	layer.add_child(mobile_hud)
 	menu = PanelContainer.new()
 	menu.position = Vector2(32, 32)
-	menu.custom_minimum_size = Vector2(420, 0)
+	menu.custom_minimum_size = Vector2(440, 0)
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.025, 0.065, 0.10, 0.97)
 	panel_style.border_color = Color("43d9ea")
@@ -275,6 +298,9 @@ func build_interface() -> void:
 	mode_select = OptionButton.new()
 	for text in ["Score match / 5 minutes", "First to 10 eliminations", "Practice / no score limit"]: mode_select.add_item(text)
 	menu_box.add_child(mode_select)
+	character_picker = preload("res://character_menu.gd").new()
+	menu_box.add_child(character_picker)
+	character_picker.setup(self)
 	add_button("PRACTICE", practice)
 	add_button("SHOOTING PRACTICE · TRAINING ROBOT", shooting_practice)
 	add_button("HOST TWO-PLAYER MATCH", host_game)
@@ -324,6 +350,12 @@ func add_button(text: String, action: Callable) -> void:
 
 func clear_round() -> void:
 	training_enabled = false
+	if armory: armory.reset()
+	for charge in charges.values():
+		if is_instance_valid(charge): charge.queue_free()
+	charges.clear()
+	c4_mode = false
+	if c4_preview: c4_preview.hide()
 	if viewmodel: viewmodel.hide()
 	if zone_wall: zone_wall.hide()
 	outside_tint.hide()
@@ -463,6 +495,7 @@ func join_game() -> void:
 
 func connected() -> void:
 	local_id = multiplayer.get_unique_id()
+	register_character.rpc_id(1,selected_character)
 	active = true
 	menu.hide()
 	if not review_mode: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -486,6 +519,7 @@ func peer_joined(id: int) -> void:
 	send_snapshot()
 
 func peer_left(id: int) -> void:
+	if armory and fighters.has(id):armory.release_keycard(id,fighters[id].position)
 	if fighters.has(id):
 		fighters[id].queue_free()
 		fighters.erase(id)
@@ -493,6 +527,7 @@ func peer_left(id: int) -> void:
 
 func start_round() -> void:
 	active = true
+	character_choices[1] = selected_character
 	spawn_fighter(1)
 	seed_loot()
 	menu.hide()
@@ -501,6 +536,7 @@ func start_round() -> void:
 func spawn_fighter(id: int) -> void:
 	var body = Fighter.new()
 	body.peer_id = id
+	body.set_character(character_choices.get(id, selected_character if id==local_id else "cyborg"))
 	if not authority and id != local_id: body.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	body.name = "Fighter_%s" % id
 	add_child(body)
@@ -527,64 +563,34 @@ func seed_loot() -> void:
 	for i in range(54):
 		var p := zone_center + Vector3(rng.randf_range(-arena_bounds.size.x * 0.4, arena_bounds.size.x * 0.4), 0, rng.randf_range(-arena_bounds.size.z * 0.4, arena_bounds.size.z * 0.4))
 		p = floor_at(p)
-		if p.is_finite(): add_loot(i % KINDS.size(), p)
+		if p.is_finite(): add_loot(i % KINDS.size(), p, Weapons.ids()[int(i / KINDS.size()) % Weapons.ids().size()])
 	# A reliable nearby supply route also serves movement and pickup tests.
-	for i in range(6):
+	for i in range(KINDS.size()):
 		var p := floor_at(NORTH_ENTRY + Vector3(0, 0, 4 + i * 2))
 		if p.is_finite(): add_loot(i, p)
 
-func add_loot(kind: int, at: Vector3) -> int:
+func add_loot(kind: int, at: Vector3, weapon_id: String = "carbine") -> int:
 	loot_dirty = true
 	loot_serial += 1
-	loot[loot_serial] = {"kind": kind, "p": at, "ready": 0.0}
+	loot[loot_serial] = {"kind": kind, "p": at, "ready": 0.0, "weapon_id":weapon_id}
 	make_loot_visual(loot_serial)
 	return loot_serial
 
 func make_loot_visual(id: int) -> void:
+	var item: Dictionary = loot[id]
 	var node := Node3D.new()
-	node.position = loot[id].p
+	node.position = item.p
 	add_child(node)
 	loot_nodes[id] = node
-	var mesh := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(0.55, 0.25, 0.35)
-	mesh.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = [Color("ffbd59"), Color("e5cf84"), Color("55e4b5"), Color("76a3ff"), Color("df8072"), Color("b98cf3")][loot[id].kind]
-	mat.emission_enabled = true
-	mat.emission = mat.albedo_color * 0.4
-	mesh.material_override = mat
-	node.add_child(mesh)
-	if loot[id].kind in [0, 3]:
-		var packed := CARBINE if loot[id].kind == 0 else VEST
-		if packed:
-			var model: Node3D = packed.instantiate()
-			node.add_child(model)
-			var box_bounds := AABB()
-			var first := true
-			for part in model.find_children("*", "MeshInstance3D", true, false):
-				var resource_label: String = String(part.name) + String(part.mesh.resource_name)
-				if part.mesh.get_surface_count() > 0 and part.mesh.surface_get_material(0): resource_label += part.mesh.surface_get_material(0).resource_name
-				if loot[id].kind == 0 and "arm" in resource_label.to_lower():
-					part.hide()
-					continue
-				var part_bounds: AABB = model.global_transform.affine_inverse() * part.global_transform * part.get_aabb()
-				box_bounds = part_bounds if first else box_bounds.merge(part_bounds)
-				first = false
-				part.visibility_range_end = 45
-				part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			var ratio := 0.85 / maxf(box_bounds.size.length(), 0.01)
-			model.scale = Vector3.ONE * ratio
-			model.position = -box_bounds.get_center() * ratio
-			model.rotation.z = PI * 0.5 if loot[id].kind == 0 else 0.0
-			mesh.hide()
+	var model: Node3D = LootModels.create_loot(item.kind,item.get("weapon_id","carbine"))
+	node.add_child(model)
 	var label := Label3D.new()
-	label.text = KINDS[loot[id].kind]
+	label.text = Weapons.definition(item.get("weapon_id","carbine")).name if item.kind==0 else KINDS[item.kind]
 	label.position.y = 0.55
 	label.font_size = 24
 	label.pixel_size = 0.003
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.visibility_range_end = 22.0
+	label.visibility_range_end = 18
 	node.add_child(label)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -596,6 +602,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if not active or menu.visible: return
 		match event.physical_keycode:
+			KEY_1: request_action("slot_0")
+			KEY_2: request_action("slot_1")
+			KEY_3: request_action("slot_2")
+			KEY_4: request_action("slot_3")
+			KEY_5: request_action("slot_4")
+			KEY_Q: request_action("next_weapon")
+			KEY_C: c4_mode = not c4_mode
+			KEY_F: request_action("place_c4")
+			KEY_X: request_action("detonate_c4")
 			KEY_V: third_person = not third_person
 			KEY_M: radar.toggle_map()
 			KEY_TAB:
@@ -715,6 +730,19 @@ func submit_action(action: String) -> void:
 func perform_action(id: int, action: String) -> void:
 	if not fighters.has(id): return
 	var body = fighters[id]
+	if action.begins_with("slot_"):
+		var slot := action.trim_prefix("slot_").to_int()
+		if slot>=0 and slot<body.weapon_slots.size():equip_weapon(body,body.weapon_slots[slot])
+		return
+	if action == "next_weapon":
+		if body.weapon_slots.size()>1:equip_weapon(body,body.weapon_slots[(body.weapon_slots.find(body.weapon_id)+1)%body.weapon_slots.size()])
+		return
+	if action == "place_c4":
+		place_c4(id)
+		return
+	if action == "detonate_c4":
+		detonate_c4(id)
+		return
 	if action == "rematch":
 		if id == 1 and not end_text.is_empty():
 			clock = 0
@@ -739,7 +767,7 @@ func perform_action(id: int, action: String) -> void:
 				body.velocity.y = maxf(body.velocity.y, -7)
 			elif body.phase == "ground": body.command.jump = true
 		"reload":
-			if body.weapon and body.magazine < 30 and body.ammo > 0 and body.reload_left <= 0: body.reload_left = 1.8
+			if body.weapon and body.weapon_id!="knife" and body.magazine < body.magazine_capacity and body.ammo > 0 and body.reload_left <= 0: body.reload_left = Weapons.definition(body.weapon_id).reload
 		"heal":
 			if body.medkits > 0 and body.hp < 100:
 				body.medkits -= 1
@@ -750,6 +778,7 @@ func perform_action(id: int, action: String) -> void:
 func interact(id: int) -> void:
 	var body = fighters[id]
 	if body.phase != "ground": return
+	if armory and armory.interact(id): return
 	for crate in crates:
 		if not crate.opened and body.position.distance_to(crate.position) < 2.6:
 			crate.set_open(true)
@@ -768,19 +797,23 @@ func interact(id: int) -> void:
 		var capacity := 240 if body.backpack else 120
 		match loot[nearest].kind:
 			0:
-				body.weapon = true
-				body.magazine = 30
+				var gun_id: String = loot[nearest].get("weapon_id","carbine")
+				if gun_id not in body.weapon_slots: body.weapon_slots.append(gun_id)
+				body.slot_magazines[gun_id] = Weapons.definition(gun_id).magazine
+				equip_weapon(body,gun_id)
 				body.ammo = mini(capacity, body.ammo + 60)
 			1: body.ammo = mini(capacity, body.ammo + 60)
 			2: body.medkits = mini(4 if body.backpack else 2, body.medkits + 1)
 			3: body.armor = 75
 			4: body.grenades = mini(4 if body.backpack else 2, body.grenades + 1)
 			5: body.backpack = true
+			6: body.c4_count = mini(4,body.c4_count+1)
 		loot[nearest].ready = clock + 35
 		loot_dirty = true
 		loot_nodes[nearest].hide()
 		return
 	for door in doors:
+		if door.has_meta("locked_armory"): continue
 		if body.position.distance_to(door.to_global(Vector3(door.width * 0.5, 0, 0))) < 2.8:
 			if door.is_open:
 				for other in fighters.values():
@@ -805,17 +838,18 @@ func trace_shot(body: CharacterBody3D, view: Basis, shoulder: bool) -> Dictionar
 	var excluded: Array[RID] = [body.get_rid()]
 	for fighter in fighters.values():
 		if fighter.phase == "dead": excluded.append(fighter.get_rid())
-	var endpoint := eye + direction * 220
+	var weapon_range: float = Weapons.definition(body.weapon_id).range
+	var endpoint := eye + direction * weapon_range
 	if shoulder:
 		var sight := shoulder_camera(eye, view, excluded)
-		var sight_query := PhysicsRayQueryParameters3D.create(sight, sight + direction * 220)
+		var sight_query := PhysicsRayQueryParameters3D.create(sight, sight + direction * weapon_range)
 		sight_query.exclude = excluded
 		var aimed := get_world_3d().direct_space_state.intersect_ray(sight_query)
 		var target: Vector3 = sight_query.to if aimed.is_empty() else aimed.position
 		# The camera chooses the point. The shot still starts at the fighter so cover can stop it.
 		if (target - eye).dot(direction) > 0:
 			var aim_direction := eye.direction_to(target)
-			endpoint = eye + aim_direction * minf(220.0, eye.distance_to(target) + 0.03)
+			endpoint = eye + aim_direction * minf(weapon_range, eye.distance_to(target) + 0.03)
 	var shot := PhysicsRayQueryParameters3D.create(eye, endpoint)
 	shot.exclude = excluded
 	shot.hit_from_inside = true
@@ -824,30 +858,32 @@ func trace_shot(body: CharacterBody3D, view: Basis, shoulder: bool) -> Dictionar
 
 func shoot(id: int) -> void:
 	var body = fighters[id]
-	if body.phase != "ground" or not body.weapon or body.magazine <= 0 or body.cooldown > 0 or body.reload_left > 0: return
-	body.magazine -= 1
-	body.cooldown = 0.12
-	var origin := shot_eye(body)
-	var view := Basis.from_euler(Vector3(body.pitch, body.yaw, 0))
-	var trace := trace_shot(body, view, body.command.get("third_person", false))
-	var hit: Dictionary = trace.hit
-	var endpoint: Vector3 = trace.endpoint
-	if not hit.is_empty():
-		for other in fighters:
-			if fighters[other] == hit.collider:
-				var before_hp: float = fighters[other].hp
-				var before_armor: float = fighters[other].armor
-				damage(other, 26, id)
-				if fighters[other].hp < before_hp:
-					var normal: Vector3 = hit.normal if hit.normal != Vector3.ZERO else view.z
-					var health_lost: float = before_hp - fighters[other].hp
-					var armor_lost: float = before_armor - fighters[other].armor
-					confirmed_impact(hit.position, normal, other, id, health_lost, armor_lost)
-					if not multiplayer.get_peers().is_empty():
-						confirmed_impact.rpc(hit.position, normal, other, id, health_lost, armor_lost)
+	var spec: Dictionary = Weapons.definition(body.weapon_id)
+	var melee: bool = body.weapon_id=="knife"
+	if body.phase != "ground" or not body.weapon or (not melee and body.magazine<=0) or body.cooldown>0 or body.reload_left>0:return
+	if not melee:body.magazine-=1
+	body.cooldown=spec.interval
+	var origin:=shot_eye(body)
+	var view:=Basis.from_euler(Vector3(body.pitch,body.yaw,0))
+	for pellet in range(spec.pellets):
+		var shot_view:=view
+		if pellet>0:shot_view=Basis.from_euler(Vector3(body.pitch+randf_range(-spec.spread,spec.spread),body.yaw+randf_range(-spec.spread,spec.spread),0))
+		var trace:=trace_shot(body,shot_view,body.command.get("third_person",false))
+		var hit:Dictionary=trace.hit
+		if not hit.is_empty():
+			for other in fighters:
+				if fighters[other]!=hit.collider:continue
+				var before_hp:float=fighters[other].hp
+				var before_armor:float=fighters[other].armor
+				damage(other,spec.damage,id)
+				if fighters[other].hp<before_hp:
+					var normal:Vector3=hit.normal if hit.normal!=Vector3.ZERO else view.z
+					confirmed_impact(hit.position,normal,other,id,before_hp-fighters[other].hp,before_armor-fighters[other].armor)
+					if not multiplayer.get_peers().is_empty():confirmed_impact.rpc(hit.position,normal,other,id,before_hp-fighters[other].hp,before_armor-fighters[other].armor)
 				break
-	shot_effect(origin, endpoint, id)
-	if multiplayer.get_peers().size() > 0: remote_shot.rpc(origin, endpoint, id)
+		if pellet==0:
+			shot_effect(origin,trace.endpoint,id)
+			if not multiplayer.get_peers().is_empty():remote_shot.rpc(origin,trace.endpoint,id)
 
 @rpc("authority", "call_remote", "unreliable", 3)
 func remote_shot(from: Vector3, to: Vector3, id: int) -> void:
@@ -855,19 +891,13 @@ func remote_shot(from: Vector3, to: Vector3, id: int) -> void:
 
 func shot_effect(from: Vector3, to: Vector3, id: int) -> void:
 	shot_index = (shot_index % 2) + 1
+	var weapon_name: String = fighters[id].weapon_id if fighters.has(id) else "carbine"
+	if weapon_name=="knife": return
 	if id == local_id:
-		play_local_sound("ar15_close_0%s_responsive.wav" % shot_index, -4)
+		play_weapon_sound(weapon_name,from,false,true)
 	elif id > 0:
-		var sound := AudioStreamPlayer3D.new()
-		var far_shot: bool = fighters.has(local_id) and fighters[local_id].position.distance_to(from) > 35
-		sound.stream = RIFLE_AUDIO["ar15_%s_0%s.wav" % ["mid" if far_shot else "close", shot_index]]
-		sound.volume_db = -9
-		sound.unit_size = 18
-		sound.max_distance = 240
-		add_child(sound)
-		sound.position = from
-		sound.finished.connect(sound.queue_free)
-		sound.play()
+		var far_shot: bool = fighters.has(local_id) and fighters[local_id].position.distance_to(from)>35
+		play_weapon_sound(weapon_name,from,far_shot,false)
 	var line := ImmediateMesh.new()
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -924,18 +954,18 @@ func damage(id: int, amount: float, attacker: int) -> void:
 	if attacker != id and fighters.has(attacker):
 		fighters[attacker].score += 1
 		if mode == 1 and fighters[attacker].score >= 10: finish_match()
-	if body.weapon: add_loot(0, body.position + Vector3.UP * 0.3)
+	if armory: armory.release_keycard(id,body.position+Vector3.UP*.3)
+	if body.weapon:
+		if body.weapon_slots.is_empty():add_loot(0,body.position+Vector3.UP*.3,body.weapon_id)
+		else:
+			for i in range(body.weapon_slots.size()):add_loot(0,body.position+Vector3(i*.3,.3,0),body.weapon_slots[i])
 	body.animate()
 
 func throw_grenade(id: int) -> void:
 	var body = fighters[id]
 	if body.phase != "ground" or body.grenades <= 0: return
 	body.grenades -= 1
-	var mesh := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.12
-	sphere.height = 0.24
-	mesh.mesh = sphere
+	var mesh: Node3D = LootModels.create_loot(4)
 	mesh.position = body.position + Vector3.UP * 1.5
 	add_child(mesh)
 	var direction: Vector3 = Basis.from_euler(Vector3(body.pitch, body.yaw, 0)) * Vector3.FORWARD
@@ -974,22 +1004,16 @@ func remote_blast(at: Vector3) -> void:
 	blast_effect(at)
 
 func blast_effect(at: Vector3) -> void:
-	var mesh := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.4
-	sphere.height = 0.8
-	mesh.mesh = sphere
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_color = Color(1.0, 0.5, 0.1, 0.7)
-	mesh.material_override = material
-	add_child(mesh)
-	mesh.position = at
-	var tween := create_tween().set_parallel(true)
-	tween.tween_property(mesh, "scale", Vector3.ONE * 12, 0.3)
-	tween.tween_property(material, "albedo_color:a", 0.0, 0.3)
-	tween.chain().tween_callback(mesh.queue_free)
+	ExplosiveFX.spawn(self,at,Vector3.UP,1.0)
+	var sound:=AudioStreamPlayer3D.new()
+	sound.stream=preload("res://audio/explosives/explosion_cannon_close.wav")
+	sound.volume_db=-3
+	sound.unit_size=20
+	sound.max_distance=250
+	add_child(sound)
+	sound.global_position=at
+	sound.finished.connect(sound.queue_free)
+	sound.play()
 
 func finish_match() -> void:
 	var best := -1
@@ -1015,11 +1039,20 @@ func send_snapshot() -> void:
 	var door_states: Array[bool] = []
 	for door in doors: door_states.append(door.is_open)
 	for crate in crates: door_states.append(crate.opened)
-	receive_snapshot.rpc(states, clock, zone_radius, door_states, mode, end_text, flight_time)
+	receive_snapshot.rpc(var_to_bytes([states,clock,zone_radius,door_states,mode,end_text,flight_time,armory.pack_state() if armory else {},pack_charges()]).compress(FileAccess.COMPRESSION_DEFLATE))
 
 @rpc("authority", "call_remote", "unreliable_ordered", 0)
-func receive_snapshot(states: Dictionary, time: float, radius: float, door_states: Array, game_mode: int, result: String, flight: float) -> void:
+func receive_snapshot(packet: PackedByteArray) -> void:
+	if authority or packet.size()>16384:return
+	var decoded:=packet.decompress_dynamic(65536,FileAccess.COMPRESSION_DEFLATE)
+	var values=bytes_to_var(decoded)
+	if not values is Array or values.size()!=9:return
+	apply_snapshot(values[0],values[1],values[2],values[3],values[4],values[5],values[6],values[7],values[8])
+
+func apply_snapshot(states: Dictionary, time: float, radius: float, door_states: Array, game_mode: int, result: String, flight: float, armory_state: Dictionary = {}, charge_state: Dictionary = {}) -> void:
 	if authority: return
+	if armory and not armory_state.is_empty():armory.apply_state(armory_state)
+	apply_charges(charge_state)
 	flight_time = flight
 	update_flight(0)
 	clock = time
@@ -1034,6 +1067,7 @@ func receive_snapshot(states: Dictionary, time: float, radius: float, door_state
 			fighters[id].queue_free()
 			fighters.erase(id)
 	for i in range(mini(doors.size(), door_states.size())):
+		if doors[i].has_meta("locked_armory"):continue
 		if doors[i].is_open != door_states[i]: doors[i].toggle(Vector3.INF)
 	for i in range(crates.size()):
 		if door_states.size() > doors.size() + i: crates[i].set_open(door_states[doors.size() + i])
@@ -1055,11 +1089,7 @@ func receive_grenades(states: Array) -> void:
 		var id: int = state[0]
 		seen.append(id)
 		if not remote_grenades.has(id):
-			var node := MeshInstance3D.new()
-			var sphere := SphereMesh.new()
-			sphere.radius = 0.12
-			sphere.height = 0.24
-			node.mesh = sphere
+			var node: Node3D = LootModels.create_loot(4)
 			add_child(node)
 			node.position = state[1]
 			remote_grenades[id] = {"node": node, "target": state[1]}
@@ -1073,6 +1103,8 @@ func _process(delta: float) -> void:
 	if main_rotor: main_rotor.rotate_y(delta * 31)
 	if tail_rotor: tail_rotor.rotate_x(delta * 48)
 	update_suspension()
+	update_c4_preview()
+	update_weapon_view()
 	if measure_frames and active and clock > 2 and delta > 0:
 		frame_samples.append(delta)
 		if delta > 0.04 and frame_hitches.size() < 20:
@@ -1118,8 +1150,8 @@ func _process(delta: float) -> void:
 		viewmodel.visible = body.weapon and not outside_view and body.phase == "ground"
 		viewmodel.position.y = -0.38 - minf(body.reload_left, 0.3)
 		viewmodel.rotation.x = recoil * 2
-		if gun_animator and viewmodel.visible:
-			var clip_time: float = 3.0 + 3.0 * (1.0 - body.reload_left / 1.8) if body.reload_left > 0 else 6.0
+		if gun_animator and viewmodel.visible and body.weapon_id=="carbine":
+			var clip_time: float = 3.0 + 3.0 * (1.0 - body.reload_left / maxf(Weapons.definition(body.weapon_id).reload,.01)) if body.reload_left > 0 else 6.0
 			if clip_time != gun_previous_time: gun_animator.seek(clip_time, true)
 			if body.reload_left > 0:
 				var cues := {3.25: "ar15_magazine_out.wav", 4.4: "ar15_magazine_in.wav", 5.3: "ar15_bolt_release.wav"}
@@ -1639,3 +1671,166 @@ func safety_review() -> void:
 	file.store_string(JSON.stringify({"passed": passed, "checks": checks, "freefall_seconds": freefall_frames / 60.0, "glide_seconds": glide_frames / 60.0}, "  "))
 	print("SAFETY_REVIEW ", JSON.stringify(checks), " passed=", passed)
 	get_tree().quit(0 if passed else 1)
+
+func select_character(id: String) -> void:
+	if not Characters.valid(id):return
+	selected_character=id
+	var config:=ConfigFile.new()
+	config.set_value("player","character",id)
+	config.save("user://industrial-yard-profile.cfg")
+	if authority:
+		character_choices[local_id]=id
+		if fighters.has(local_id):fighters[local_id].set_character(id)
+	elif active:register_character.rpc_id(1,id)
+
+@rpc("any_peer","call_remote","reliable",2)
+func register_character(id: String) -> void:
+	if not authority or not Characters.valid(id):return
+	var sender:=multiplayer.get_remote_sender_id()
+	if not fighters.has(sender):return
+	character_choices[sender]=id
+	fighters[sender].set_character(id)
+	send_snapshot()
+
+func equip_weapon(body: CharacterBody3D,id: String) -> void:
+	if not Weapons.DEFINITIONS.has(id):return
+	if body.weapon:body.slot_magazines[body.weapon_id]=body.magazine
+	body.weapon_id=id
+	body.weapon=true
+	body.magazine_capacity=Weapons.definition(id).magazine
+	body.magazine=body.slot_magazines.get(id,body.magazine_capacity)
+	body.reload_left=0
+	body.knife_owned="knife" in body.weapon_slots
+
+func play_weapon_sound(id: String,at: Vector3,distant: bool,local: bool) -> void:
+	var prefix: String={"ak47":"ak47_close_01","pistol":"pistol_ppq_close_01","shotgun":"shotgun_nova_close_01"}.get(id,"ar15_close_01")
+	if distant and id=="ak47":prefix="ak47_mid_01"
+	if distant and id=="carbine":prefix="ar15_mid_01"
+	var path: String="res://audio/weapons/"+prefix+".wav"
+	if not ResourceLoader.exists(path):path="res://audio/rifle/ar15_close_01_responsive.wav"
+	if local:
+		var sound:=AudioStreamPlayer.new()
+		sound.stream=load(path);sound.volume_db=-5
+		add_child(sound);sound.finished.connect(sound.queue_free);sound.play()
+	else:
+		var sound:=AudioStreamPlayer3D.new()
+		sound.stream=load(path);sound.volume_db=-8;sound.unit_size=18;sound.max_distance=240
+		add_child(sound);sound.global_position=at;sound.finished.connect(sound.queue_free);sound.play()
+
+func update_weapon_view() -> void:
+	if not active or not fighters.has(local_id):
+		if weapon_view:weapon_view.hide()
+		return
+	var body=fighters[local_id]
+	if active_view_weapon!=body.weapon_id:
+		if weapon_view:weapon_view.queue_free()
+		weapon_view=Weapons.create_world_model(body.weapon_id)
+		camera.add_child(weapon_view)
+		weapon_view.position=Vector3(.24,-.24,-.65)
+		weapon_view.rotation_degrees=Vector3(0,180,0)
+		active_view_weapon=body.weapon_id
+	weapon_view.visible=body.weapon and body.weapon_id!="carbine" and not third_person and body.phase=="ground"
+	weapon_view.rotation.x=-minf(body.reload_left,1)*.8+recoil*2
+	if viewmodel and body.weapon_id!="carbine":viewmodel.hide()
+
+func setup_armory() -> void:
+	armory=preload("res://locked_armory.gd").new()
+	add_child(armory)
+	armory.setup(self)
+	armory_furniture=preload("res://armory_furnishings.gd").new()
+	add_child(armory_furniture)
+	armory_furniture.setup(self,armory)
+	armory.unlocked.connect(func(_id):
+		for item in armory_furniture.reward_positions():add_loot(item.kind,item.position,item.weapon_id))
+
+func c4_surface(body: CharacterBody3D) -> Dictionary:
+	var eye:=shot_eye(body)
+	var view:=Basis.from_euler(Vector3(body.pitch,body.yaw,0))
+	var excluded:Array[RID]=[]
+	for fighter in fighters.values():excluded.append(fighter.get_rid())
+	var origin:=shoulder_camera(eye,view,excluded) if body.command.get("third_person",true) else eye
+	var query:=PhysicsRayQueryParameters3D.create(origin,origin-view.z*10)
+	query.exclude=excluded
+	var hit:=get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty() or eye.distance_to(hit.position)>6:return {}
+	var reach:=PhysicsRayQueryParameters3D.create(eye,hit.position)
+	reach.exclude=excluded
+	var block:=get_world_3d().direct_space_state.intersect_ray(reach)
+	if not block.is_empty() and block.position.distance_to(hit.position)>.15:return {}
+	return hit
+
+func update_c4_preview() -> void:
+	if not c4_preview:
+		c4_preview=MagneticCharge.create_preview(preload("res://assets/items/tactical/c4.glb"))
+		add_child(c4_preview)
+	c4_preview.visible=active and c4_mode and not menu.visible and fighters.has(local_id) and fighters[local_id].phase=="ground"
+	if not c4_preview.visible:return
+	var body=fighters[local_id]
+	var hit:=c4_surface(body)
+	if hit.is_empty():
+		c4_preview.global_position=shot_eye(body)-camera.global_basis.z*2
+		c4_preview.set_preview_valid(false)
+	else:
+		c4_preview.configure(hit.position,hit.normal,local_id)
+		c4_preview.set_preview_valid(body.c4_count>0)
+
+func place_c4(id: int) -> void:
+	if not authority or not fighters.has(id):return
+	var body=fighters[id]
+	if body.phase!="ground" or body.c4_count<=0 or charges.size()>=8:return
+	var hit:=c4_surface(body)
+	if hit.is_empty():return
+	for existing in charges.values():
+		if existing.global_position.distance_to(hit.position)<.35:return
+	body.c4_count-=1
+	charge_serial+=1
+	var charge:=MagneticCharge.new()
+	charge.sound_explosion=preload("res://audio/explosives/explosion_cannon_close.wav")
+	charge.set_model(preload("res://assets/items/tactical/c4.glb"))
+	add_child(charge)
+	charge.configure(hit.position,hit.normal,id,hit.collider)
+	charge.arm()
+	charge.detonation_requested.connect(func(at,owner_id): explosion_damage(at,owner_id,9.0,140.0))
+	charges[charge_serial]=charge
+
+func detonate_c4(id: int) -> void:
+	for key in charges.keys():
+		var charge=charges[key]
+		if not is_instance_valid(charge):charges.erase(key);continue
+		if charge.placement_owner_id==id and charge.armed:
+			var at:Vector3=charge.global_position
+			if charge.detonate():
+				charges.erase(key)
+				if not multiplayer.get_peers().is_empty():remote_blast.rpc(at)
+
+func explosion_damage(at: Vector3,owner_id: int,radius: float,strength: float) -> void:
+	for id in fighters:
+		var body=fighters[id]
+		var target:Vector3=body.position+Vector3.UP
+		var distance:float=at.distance_to(target)
+		if body.phase=="dead" or distance>radius:continue
+		var query:=PhysicsRayQueryParameters3D.create(at+Vector3.UP*.05,target)
+		var hit:=get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty() or hit.collider==body:damage(id,strength*(1-distance/radius),owner_id)
+
+func pack_charges() -> Dictionary:
+	var result:Dictionary={}
+	for key in charges:
+		var c=charges[key]
+		if not is_instance_valid(c):continue
+		result[key]={"p":c.global_position,"n":c.global_basis.y,"owner":c.placement_owner_id,"armed":c.armed}
+	return result
+
+func apply_charges(states: Dictionary) -> void:
+	for key in charges.keys():
+		if not states.has(key):
+			if is_instance_valid(charges[key]):charges[key].queue_free()
+			charges.erase(key)
+	for key in states:
+		var state:Dictionary=states[key]
+		if not charges.has(key):
+			var c:=MagneticCharge.new()
+			c.set_model(preload("res://assets/items/tactical/c4.glb"))
+			add_child(c);charges[key]=c
+		charges[key].configure(state.p,state.n,state.owner)
+		charges[key].armed=state.armed

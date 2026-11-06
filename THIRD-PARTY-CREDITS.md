@@ -78,8 +78,17 @@ Recorded from embedded GLB metadata where available. Creator-declared metadata i
 
 ## Audio
 
-See audio/rifle/README.md and SOURCE-LICENSE, and audio/sky/sources-and-credits.json. Provisional sky audio is not enabled by default.
+See audio/rifle/README.md and SOURCE-LICENSE, and audio/sky/sources-and-credits.json. Recorded sky audio is enabled; see audio/sky/README.md for the current source replacements.
 
 ## Map
 
 The industrial map and baked collision were supplied from the prior local project. Original creator/source/licence must be confirmed before public distribution.
+## November 6 playable content update
+
+- Five new characters from the user-provided Grab3D archive, CC0. Source links and disclosure: assets/characters/LICENSE.txt. Reduced to roughly 12,500 triangles each, textures resized to 1024px, custom 21-bone rigs and portraits added. Ground motion was retargeted from the credited Pipo Game in My Notebook training soldier above; those motion adaptations retain CC-BY-4.0 attribution. Sky pose clips are authored for this project.
+- Armory by 3vblvck3, CC-BY-4.0: https://sketchfab.com/3d-models/armory-8b4b808482e842b590d2cca4147ecb16 . Reduced geometry and atlas; adaptation details in assets/armory/CREDITS.md.
+- Gun, medical and armour model sources and modifications: assets/items/tactical/CREDITS.md, armor-source.json and medical-source.json. Includes CC0 BlendSwap pack 88429, Armored Wave AK-74 CC-BY-4.0, Ruslan Koschey Tactical FIRST AID KIT CC-BY-4.0, and Exactly plate carrier CC-BY-4.0.
+- Grenade and ammunition models: Kenney Blaster Kit, CC0; assets/items/kenney/License.txt.
+- Project-authored low-poly knife, C4 and backpack mesh assets.
+- Added recorded weapon audio: audio/weapons/README.md. Recorded explosive reports: Joseph SARDIN, CC0, audio/explosives/SOURCES.json; these are agricultural cannon recordings adapted for gameplay, not C4 or military-grenade recordings.
+- Recorded alarm: audio/armory/CREDITS.md. Updated real rotor and wind: audio/sky/README.md and sources-and-credits.json.

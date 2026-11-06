@@ -3,7 +3,8 @@ extends CharacterBody3D
 const WALK_SPEED := 5.6
 const SPRINT_SPEED := 8.0
 const CROUCH_SPEED := 2.6
-const SOLDIER := preload("res://assets/provided/training_soldier.glb")
+const Characters := preload("res://characters_catalog.gd")
+const Weapons := preload("res://weapons_catalog.gd")
 const PARACHUTE := preload("res://assets/provided/army_parachute.glb")
 
 class BodyMotion extends SkeletonModifier3D:
@@ -52,6 +53,16 @@ var medkits := 0
 var grenades := 0
 var backpack := false
 var weapon := false
+var character_id := "soldier"
+var weapon_id := "carbine"
+var weapon_slots: Array[String] = []
+var slot_magazines: Dictionary = {}
+var magazine_capacity := 30
+var c4_count := 0
+var knife_owned := false
+var held_root: BoneAttachment3D
+var held_id := ""
+
 var score := 0
 var phase := "helicopter"
 var cooldown := 0.0
@@ -123,7 +134,7 @@ func install_parachute() -> void:
 	model.position.y = -bounds.position.y * ratio
 
 func install_model() -> void:
-	model_root = SOLDIER.instantiate()
+	model_root = Characters.scene_for(character_id).instantiate()
 	visual.add_child(model_root)
 	model_root.rotation.y = PI
 	var bounds := AABB()
@@ -141,15 +152,25 @@ func install_model() -> void:
 		model_root.position.y = -bounds.position.y * ratio
 	var animators = model_root.find_children("*", "AnimationPlayer", true, false)
 	if not animators.is_empty(): animator = animators[0]
+	else:
+		animator = AnimationPlayer.new()
+		model_root.add_child(animator)
+		animator.root_node = NodePath("..")
+	var motions := load("res://assets/characters/%s_motions.tres" % character_id) as AnimationLibrary
+	if motions: animator.add_animation_library("", motions)
+
 	if animator: preload("res://sky_motion.gd").attach(model_root, animator)
 	var rigs := model_root.find_children("*", "Skeleton3D", true, false)
 	if not rigs.is_empty():
 		var rig := rigs[0] as Skeleton3D
+		held_root = BoneAttachment3D.new()
+		held_root.bone_name = "RightHand"
+		rig.add_child(held_root)
 		var motion := BodyMotion.new()
 		for bone in range(rig.get_bone_count()):
 			var bone_name := rig.get_bone_name(bone)
-			if bone_name.begins_with("Bind_Hips_"): motion.hips = bone
-			elif bone_name.begins_with("Bind_Spine1_"): motion.chest = bone
+			if bone_name == "Hips" or bone_name.begins_with("Bind_Hips_"): motion.hips = bone
+			elif bone_name == "Chest" or bone_name.begins_with("Bind_Spine1_"): motion.chest = bone
 		if motion.chest >= 0:
 			body_motion = motion
 			rig.add_child(body_motion)
@@ -207,7 +228,16 @@ func show_pose() -> bool:
 	return phase != "dead" or previous_phase != "dead" or phase_clock < 1.25
 
 func _process(delta: float) -> void:
-	if embedded_gun: embedded_gun.visible = weapon and phase == "ground"
+	if embedded_gun: embedded_gun.visible = false
+	if held_root:
+		held_root.visible = weapon and phase == "ground"
+		if weapon_id != held_id:
+			for child in held_root.get_children(): child.queue_free()
+			var gun: Node3D = Weapons.create_world_model(weapon_id)
+			held_root.add_child(gun)
+			gun.rotation_degrees = Vector3(0,90,0)
+			gun.scale = Vector3.ONE * 0.75
+			held_id = weapon_id
 	if phase != previous_phase:
 		landed_from_air = phase == "ground" and previous_phase in ["fall", "parachute"]
 		phase_clock = 0
@@ -251,6 +281,12 @@ func drop(at: Vector3) -> void:
 	hp = 100.0
 	armor = 0.0
 	weapon = false
+	weapon_id = "carbine"
+	weapon_slots.clear()
+	slot_magazines.clear()
+	magazine_capacity = 30
+	c4_count = 0
+	knife_owned = false
 	magazine = 0
 	ammo = 0
 	medkits = 0
@@ -275,7 +311,7 @@ func step(delta: float) -> void:
 	if reload_left > 0.0:
 		reload_left = maxf(0.0, reload_left - delta)
 		if reload_left == 0.0:
-			var rounds := mini(30 - magazine, ammo)
+			var rounds := mini(magazine_capacity - magazine, ammo)
 			magazine += rounds
 			ammo -= rounds
 	if phase == "dead":
@@ -317,7 +353,7 @@ func step(delta: float) -> void:
 	animate()
 
 func pack() -> Dictionary:
-	return {"p": position, "v": velocity, "y": yaw, "x": pitch, "hp": hp, "armor": armor, "ammo": ammo, "mag": magazine, "med": medkits, "gren": grenades, "bag": backpack, "gun": weapon, "score": score, "phase": phase, "respawn": respawn_left, "reload": reload_left, "crouch": crouched, "aim": aim, "cooldown": cooldown, "protection": protection}
+	return {"character": character_id, "weapon_id":weapon_id,"slots":weapon_slots,"slot_mags":slot_magazines,"mag_capacity":magazine_capacity,"c4":c4_count,"knife":knife_owned,"p": position, "v": velocity, "y": yaw, "x": pitch, "hp": hp, "armor": armor, "ammo": ammo, "mag": magazine, "med": medkits, "gren": grenades, "bag": backpack, "gun": weapon, "score": score, "phase": phase, "respawn": respawn_left, "reload": reload_left, "crouch": crouched, "aim": aim, "cooldown": cooldown, "protection": protection}
 
 func unpack(s: Dictionary, local: bool) -> void:
 	target_position = s.p
@@ -334,6 +370,13 @@ func unpack(s: Dictionary, local: bool) -> void:
 		pitch = s.x
 		velocity = s.v
 		aim = s.get("aim", false)
+	set_character(s.get("character",character_id))
+	weapon_id = s.get("weapon_id","carbine")
+	weapon_slots.assign(s.get("slots",[]))
+	slot_magazines = s.get("slot_mags",{})
+	magazine_capacity = s.get("mag_capacity",30)
+	c4_count = s.get("c4",0)
+	knife_owned = s.get("knife",false)
 	hp = s.hp
 	armor = s.armor
 	ammo = s.ammo
@@ -362,3 +405,18 @@ func update_collider() -> void:
 	if capsule.height != height:
 		capsule.height = height
 		body_collider.position.y = height * 0.5
+
+func set_character(id: String) -> void:
+	if not Characters.valid(id): id = "soldier"
+	if character_id == id: return
+	character_id = id
+	if not is_node_ready():return
+	if is_instance_valid(model_root):
+		visual.remove_child(model_root)
+		model_root.queue_free()
+	animator = null
+	body_motion = null
+	held_root = null
+	held_id = ""
+	embedded_gun = null
+	install_model()

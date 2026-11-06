@@ -1,42 +1,54 @@
-# Industrial Yard
+# Industrial Yard 0.2.0 playtest
 
-Standalone Godot prototype for a two-player industrial-yard drop duel. PC first, Android later.
+Two-player industrial-yard drop duel for Windows and 64-bit Android. Choose your character, Practice to learn the drop, or Host/Join to play with a friend.
 
-## Play
+## Playing with a friend
 
-Open project.godot in Godot 4.7.2, let the assets import, and press F5. Main scene: battle.tscn.
+Use the same current version on both devices. For the simplest connection, put both devices on the same Wi-Fi. One player chooses Host; the other enters the host computer or phone's local network IP address and chooses Join. The game uses UDP port 27845. Allow the Windows game through the firewall on your private home network if Windows asks. You can mix PC and Android players. Automatic internet relay, friend invitations and voice chat are not implemented; internet joining requires a reachable host and network configuration.
 
-- Practice: release the helicopter rope, deploy the parachute and explore. Practice has no storm damage.
-- Shooting Practice: start on the ground with a rifle and moving, respawning training target that does not shoot back.
-- Host/Join: direct two-player connection using the host address and UDP port 27845. Online invitations and automatic relay joining are not implemented.
-- Modes: five-minute score match, first to ten eliminations, and practice.
+## Included
 
-## Controls
+- Soldier, Cyborg, Android, Casual Man and Ninja, selected from real portraits and saved between sessions. New models are reduced to about 12,500 triangles each.
+- Carbine, AK rifle, pistol, pump shotgun and combat knife. Weapons can be picked up, switched and dropped on death. Each magazine keeps its rounds when switching.
+- Actual mesh pickups for weapons, ammunition, medical supplies, armour, backpack, grenades and C4.
+- Keycard armory with alarm, furnished weapon displays and collectible rewards.
+- Magnetic C4: green valid / red invalid surface preview, placement on reachable surfaces, arming blink and owner detonation. It follows moving doors and checks cover for blast damage.
+- Grenade physics and blast flash, dust and debris; confirmed hit effects and directional damage feedback.
+- Recorded firearm reports and mechanisms, recorded rotor, wind, cloth and landing sounds. Explosion reports use real agricultural cannon recordings. Sound references and licences are retained.
+- Third-person default, rope release, freefall, visible parachute stage and low-altitude automatic deployment.
+- Both players always appear on the map. Saved Android controls include Run above Move, weapon switch, C4 placement and detonation.
+
+## PC controls
 
 | Input | Action |
 |---|---|
 | WASD / mouse | Move / look |
-| Shift / Ctrl | Sprint / crouch |
-| Space | Release rope, deploy parachute, jump on foot |
-| Left / right mouse | Fire / aim |
-| R / E | Reload / collect supplies, open cache or door |
-| H / G | Heal / grenade |
-| V | Camera switch; third person is default |
+| Shift / Ctrl | Run / crouch |
+| Space | Release rope, deploy parachute, jump |
+| Left / right mouse | Fire or knife attack / aim |
+| R / E | Reload / collect, cache, keycard or door |
+| Q / 1-5 | Switch weapon / select slot |
+| C / F / X | Toggle C4 preview / place / detonate your charges |
+| H / G | Heal / throw grenade |
+| V | Change camera |
+| M / Tab | Expand map / release mouse |
+| F8 / Esc | Controls / menu |
 | B | Bring training target nearby in Practice |
-| M / Tab | Expand map / release cursor |
-| F8 / Esc | Control settings / menu |
-| F5 | Host rematch after match ends |
+| F5 | Host rematch after a match ends |
 
-The helicopter crosses the map with animated rotors and a swaying rope. Manual parachute deployment has a low-altitude automatic safeguard. The local minimap and expanded map show the yard. Touch controls and saved layouts are integrated, but physical Android testing remains outstanding.
+On Android, use the on-screen buttons. C4 first enables the preview and the next tap places it; BOOM detonates armed charges. Controls settings let you move buttons and adjust size, opacity and camera sensitivity.
 
-## Status and limits
+## Install
 
-Unfinished prototype. Rifle combat, loot, armour, healing, grenades, safe zone, caches, respawns, training target and damage/airflow feedback are implemented. Some pickups still use temporary coloured geometry; final characters and sky animations need polish. Additional downloaded weapons are not all integrated. The planned throwable ice wall is not implemented.
+Windows: extract the whole PC ZIP and open IndustrialYard.exe. Keep IndustrialYard.pck beside it.
+Android: open Industrial-Yard-Android.apk on a 64-bit Android 7.0+ phone. Permit installation from the app used to open this file if Android asks. This is a debug-signed playtest APK, not a Play Store release.
 
-Scripted full-round, drop-safety, training and same-computer two-process multiplayer checks have passed. This does not establish a complete manual two-computer match, reliable internet joining or phone performance. Real firearm recordings are connected; subjective sound approval remains open. Provisional sky audio is disabled by default.
+## Verification and remaining limits
 
-Generated caches, logs, executable builds and test screenshots are excluded. Required source models and textures are included. The original Medieval Town and Rift Watch projects are not included.
+Scripted checks pass for the full round, flight, fall safety, ground movement, training combat, 39 new-content checks, mobile control events, and two simultaneous local host/client processes including confirmed damage and directional feedback. The exported PC pack also passes its startup/content check. APK package and signature verification pass. These checks do not establish physical-phone frame rate or a complete match between two separate physical devices. New automatic character skinning and sky poses still need animation polish. Live overhead rendering can cost performance; the HD map fallback remains available. Ice-wall placement is not implemented.
 
-## Third-party content
+## Source
 
-See THIRD-PARTY-CREDITS.md and licence/source records under audio/. Assets retain their respective creator licences. Some supplied model sources still need verification before public release; no blanket licence is granted for all repository contents.
+Open project.godot in Godot 4.7.2. Android needs matching debug export templates, JDK 17 and Android SDK/build tools configured in the editor. The export preset currently points at the local debug template used for this build; replace that path on another computer.
+
+See THIRD-PARTY-CREDITS.md and the source/licence files under assets/ and audio/. Content retains its original licence. The supplied map's original source still needs confirmation before a commercial release.

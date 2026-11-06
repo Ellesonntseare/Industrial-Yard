@@ -35,7 +35,7 @@ static func solve_pose(rig: Skeleton3D, model: Node3D, kind: String) -> Array[Qu
 	var children: Dictionary = {}
 	for i in range(rig.get_bone_count()):
 		var name := rig.get_bone_name(i).to_lower()
-		var side := 1.0 if "left" in name else -1.0
+		var side := -1.0 if "left" in name else 1.0
 		var target := Vector3.ZERO
 		if "left" in name or "right" in name:
 			if "upperarm" in name or "uparm" in name or ("arm" in name and "fore" not in name and "shoulder" not in name and "pole" not in name):

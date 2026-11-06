@@ -1,5 +1,8 @@
 extends SceneTree
 
+class TestRadar extends RefCounted:
+	var expanded := false
+
 class TestBody extends Node3D:
 	var phase := "ground"
 	var hp := 100.0
@@ -7,6 +10,8 @@ class TestBody extends Node3D:
 	var magazine := 30
 	var ammo := 90
 	var weapon := true
+	var weapon_id := "carbine"
+	var c4_count := 2
 	var reload_left := 0.0
 	var medkits := 2
 	var grenades := 1
@@ -19,6 +24,10 @@ class TestArena extends Node3D:
 	var menu := Control.new()
 	var fighters := {}
 	var local_id := 1
+	var armory: Node = null
+	var c4_mode := false
+	var radar := TestRadar.new()
+	const Weapons = preload("res://weapons_catalog.gd")
 	var end_text := ""
 	var crates := []
 	var loot := {}
